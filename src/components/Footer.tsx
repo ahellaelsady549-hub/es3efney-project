@@ -1,4 +1,4 @@
-import { Heart, Facebook, Instagram } from 'lucide-react';
+import { Heart, Facebook, Instagram, Youtube } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -104,6 +104,15 @@ export const Footer = () => {
               >
                 <TikTokIcon />
                 <span>{L('صفحتنا على تيك توك', 'Our TikTok page')}</span>
+              </a>
+              <a
+                href="https://www.youtube.com/channel/UCaiNdnYUAhrgXQozgJlVxog"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2.5 text-sm text-white/75 transition-colors hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white"
+              >
+                <Youtube className="h-4 w-4" aria-hidden="true" />
+                <span>{L('قناتنا على يوتيوب', 'Our YouTube channel')}</span>
               </a>
             </div>
           </div>
