@@ -3,8 +3,8 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   Moon, Sun, Menu, User, LogIn, Stethoscope,
   Dumbbell, Settings as SettingsIcon, Home, Siren, HeartPulse, Pill,
-  Lightbulb, Salad, MapPin, Newspaper, Target, Activity, BookOpen,
-  Brain, ClipboardPlus, Headset, Info, UsersRound,
+  Lightbulb, Salad, MapPin, Newspaper, Activity, BookOpen,
+  Brain, ClipboardPlus, MessageSquare, Info, UsersRound, CircleHelp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -30,12 +30,12 @@ const items: Item[] = [
   { kind: 'section', id: 'physiotherapy', labelKey: 'nav.physiotherapy', icon: Activity },
   { kind: 'section', id: 'location', labelKey: 'nav.nearestHospitals', icon: MapPin },
   { kind: 'route', to: '/gym', labelKey: 'nav.gym', icon: Dumbbell },
-  { kind: 'route', to: '/nutrition-goals', labelKey: 'nav.goals', icon: Target, auth: true },
   { kind: 'route', to: '/articles', labelKey: 'nav.articles', icon: Newspaper },
+  { kind: 'route', to: '/how-to-use', labelKey: 'nav.howToUse', icon: CircleHelp },
   { kind: 'route', to: '/about', labelKey: 'nav.about', icon: Info },
   { kind: 'route', to: '/find-doctor', labelKey: 'nav.findDoctor', icon: Stethoscope, auth: true },
   { kind: 'route', to: '/personal-diagnosis', labelKey: 'nav.diagnose', icon: ClipboardPlus, auth: true },
-  { kind: 'route', to: '/ask-me', labelKey: 'nav.askMe', icon: Headset, auth: true },
+  { kind: 'route', to: '/ask-me', labelKey: 'nav.askMe', icon: MessageSquare, auth: true },
   { kind: 'route', to: '/community', labelKey: 'nav.community', icon: UsersRound, auth: true },
   { kind: 'route', to: '/dashboard', labelKey: 'nav.dashboard', icon: User, auth: true },
 ];

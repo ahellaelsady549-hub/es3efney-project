@@ -46,6 +46,11 @@ const Auth = () => {
   const [doctorCvUrl, setDoctorCvUrl] = useState('');
   const [doctorCvFile, setDoctorCvFile] = useState<File | null>(null);
   const [doctorPortfolioUrl, setDoctorPortfolioUrl] = useState('');
+  const [nationalId, setNationalId] = useState('');
+  const [governorate, setGovernorate] = useState('');
+  const [homeAddress, setHomeAddress] = useState('');
+  const [idFront, setIdFront] = useState<File | null>(null);
+  const [idBack, setIdBack] = useState<File | null>(null);
   
   // AI CV Review
   const [isReviewingCv, setIsReviewingCv] = useState(false);
@@ -146,6 +151,12 @@ const Auth = () => {
       emailSchema.parse(signupEmail);
       passwordSchema.parse(signupPassword);
       
+      if (!/^\d{14}$/.test(nationalId)) {
+        toast({ title: L('رقم قومي غير صالح', 'Invalid national ID'), description: L('أدخل 14 رقمًا مصريًا', 'Enter a 14-digit Egyptian national ID'), variant: 'destructive' }); return;
+      }
+      if (!governorate.trim() || !homeAddress.trim() || !idFront || !idBack) {
+        toast({ title: L('بيانات ناقصة', 'Missing information'), description: L('أكمل المحافظة والعنوان وارفع وجهي البطاقة', 'Enter governorate and address, and upload both ID sides'), variant: 'destructive' }); return;
+      }
       if (userType === 'doctor' && !doctorSpecialty) {
         toast({
           title: L('خطأ في البيانات','Invalid data'),
@@ -159,7 +170,7 @@ const Auth = () => {
           ? L('النبذة عن الطبيب إلزامية (20 حرفًا على الأقل)', 'Doctor bio is required (at least 20 characters)')
           : !doctorCvFile
           ? L('رفع ملف السيرة الذاتية PDF إلزامي', 'Uploading a PDF CV is required')
-          : doctorCvFile.type !== 'application/pdf' && !doctorCvFile.name.toLowerCase().endsWith('.pdf')
+          : doctorCvFile.type !== 'application/pdf' || !doctorCvFile.name.toLowerCase().endsWith('.pdf')
           ? L('السيرة الذاتية يجب أن تكون بصيغة PDF', 'The CV must be a PDF')
           : doctorCvFile.size > 300 * 1024 * 1024
           ? L('حجم الملف أكبر من 300 ميجا', 'File is larger than 300 MB')
@@ -186,9 +197,7 @@ const Auth = () => {
       email: signupEmail,
       password: signupPassword,
       options: {
-        data: {
-          full_name: signupName
-        }
+        data: { full_name: signupName, account_type: userType, national_id: nationalId, governorate, home_address: homeAddress }
       }
     });
 
@@ -212,6 +221,15 @@ const Auth = () => {
 
     if (data.user) {
       try {
+        const uploadIdentity = async (file: File, side: string) => {
+          const path = `${data.user!.id}/${side}-${crypto.randomUUID()}`;
+          const { error: uploadError } = await supabase.storage.from('identity-documents').upload(path, file);
+          if (uploadError) throw uploadError;
+          return path;
+        };
+        const [frontPath, backPath] = await Promise.all([uploadIdentity(idFront!, 'front'), uploadIdentity(idBack!, 'back')]);
+        const { error: identityError } = await supabase.from('identity_applications').insert({ user_id: data.user.id, national_id: nationalId, governorate, home_address: homeAddress, id_front_path: frontPath, id_back_path: backPath, account_type: userType, status: 'pending' });
+        if (identityError) throw identityError;
         await supabase.from('user_roles').insert({
           user_id: data.user.id,
           role: userType
@@ -221,8 +239,9 @@ const Auth = () => {
           let cvValue = doctorCvUrl;
           if (doctorCvFile && data.session) {
             const path = `${data.user.id}/${Date.now()}-${doctorCvFile.name.replace(/[^\w.-]/g, '_')}`;
-            const { error: upErr } = await supabase.storage.from('doctor-cvs').upload(path, doctorCvFile);
-            if (!upErr) cvValue = `storage:${path}`;
+            const { error: upErr } = await supabase.storage.from('doctor-cvs').upload(path, doctorCvFile, { contentType: 'application/pdf' });
+            if (upErr) throw upErr;
+            cvValue = path;
           }
           await supabase.from('doctors').insert({
             user_id: data.user.id,
@@ -260,6 +279,23 @@ const Auth = () => {
       return;
     }
 
+    if (pendingUserData?.identityFront && pendingUserData?.identityBack) {
+      try {
+        const uid = pendingUserData.userId;
+        const frontPath = `${uid}/front-${crypto.randomUUID()}`;
+        const backPath = `${uid}/back-${crypto.randomUUID()}`;
+        const [front, back] = await Promise.all([
+          supabase.storage.from('identity-documents').upload(frontPath, pendingUserData.identityFront),
+          supabase.storage.from('identity-documents').upload(backPath, pendingUserData.identityBack),
+        ]);
+        if (front.error) throw front.error;
+        if (back.error) throw back.error;
+        const { error } = await supabase.from('identity_applications').insert({ user_id: uid, national_id: pendingUserData.nationalId, governorate: pendingUserData.governorate, home_address: pendingUserData.homeAddress, id_front_path: frontPath, id_back_path: backPath, account_type: pendingUserData.userType, status: 'pending' });
+        if (error) throw error;
+      } catch (error) {
+        toast({ title: L('تعذر حفظ بيانات الهوية', 'Could not save identity documents'), description: error instanceof Error ? error.message : '', variant: 'destructive' }); return;
+      }
+    }
     setIsLoading(true);
     
     const { data, error } = await supabase.auth.verifyOtp({
@@ -564,6 +600,13 @@ const Auth = () => {
                   </div>
 
                   {/* Doctor-specific fields */}
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div><Label htmlFor="national-id">{L('الرقم القومي المصري (14 رقمًا)', 'Egyptian national ID (14 digits)')}</Label><Input id="national-id" inputMode="numeric" maxLength={14} value={nationalId} onChange={(e) => setNationalId(e.target.value.replace(/\D/g, '').slice(0,14))} required /></div>
+                    <div><Label htmlFor="governorate">{L('المحافظة', 'Governorate')}</Label><Input id="governorate" value={governorate} onChange={(e) => setGovernorate(e.target.value)} required /></div>
+                    <div className="sm:col-span-2"><Label htmlFor="home-address">{L('عنوان السكن', 'Home address')}</Label><Input id="home-address" value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} required /></div>
+                    <div><Label htmlFor="id-front">{L('صورة البطاقة - الوجه', 'ID card front')}</Label><Input id="id-front" type="file" accept="image/*" required onChange={(e) => setIdFront(e.target.files?.[0] ?? null)} /></div>
+                    <div><Label htmlFor="id-back">{L('صورة البطاقة - الظهر', 'ID card back')}</Label><Input id="id-back" type="file" accept="image/*" required onChange={(e) => setIdBack(e.target.files?.[0] ?? null)} /></div>
+                  </div>
                   {userType === 'doctor' && (
                     <div className="space-y-4 pt-2 border-t">
                       <p className="text-sm text-muted-foreground">{L('معلومات الطبيب','Doctor information')}</p>
@@ -594,30 +637,11 @@ const Auth = () => {
                         />
                       </div>
 
-                      <div className="space-y-2">
-                        <Label>{L('رابط السيرة الذاتية (اختياري)','CV link (optional)')}</Label>
-                        <div className="flex gap-2">
-                          <div className="relative flex-1">
-                            <FileText className="absolute right-3 top-3 h-4 w-4 text-muted-foreground" />
-                            <Input
-                              type="url"
-                              placeholder="https://..."
-                              value={doctorCvUrl}
-                              onChange={(e) => setDoctorCvUrl(e.target.value)}
-                              className="pr-10"
-                            />
-                          </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={reviewCvWithAI}
-                            disabled={isReviewingCv || !doctorCvUrl}
-                          >
-                            {isReviewingCv ? <Loader2 className="w-4 h-4 animate-spin" /> : L('مراجعة','Review')}
-                          </Button>
-                        </div>
-                        <Label className="text-sm">{L('ملف السيرة الذاتية PDF (إلزامي، حتى 300 ميجا)','CV file, PDF (required, up to 300 MB)')}</Label>
-                        <Input type="file" accept="application/pdf,.pdf" required className="h-12" onChange={(e) => setDoctorCvFile(e.target.files?.[0] ?? null)} />
+                  <div className="space-y-2">
+                    <Label>{L('ملف السيرة الذاتية PDF (إلزامي، حتى 300 ميجا)','CV file, PDF (required, up to 300 MB)')}</Label>
+                    <Input type="file" accept="application/pdf,.pdf" required className="h-12" onChange={(e) => { setDoctorCvFile(e.target.files?.[0] ?? null); setCvReview(null); }} />
+                    <Label>{L('رابط السيرة الذاتية (اختياري)','CV link (optional)')}</Label>
+                    <Input type="url" placeholder="https://..." value={doctorCvUrl} onChange={(e) => setDoctorCvUrl(e.target.value)} />
                         {cvReview && (
                           <p className="text-sm text-muted-foreground bg-muted p-2 rounded">
                             {cvReview}

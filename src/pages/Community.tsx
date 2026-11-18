@@ -59,6 +59,7 @@ const Community = () => {
   const [newContent, setNewContent] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [feedError, setFeedError] = useState<string | null>(null);
   const [isSendingPost, setIsSendingPost] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
   const [isDoctor, setIsDoctor] = useState(false);
@@ -155,20 +156,32 @@ const Community = () => {
 
   const fetchPosts = async () => {
     setIsLoading(true);
-    const { data } = await supabase
-      .from('community_posts')
-      .select('*')
-      .eq('category', activeCategory)
-      .is('parent_id', null)
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setPosts(data);
-      const userIds = [...new Set(data.map(p => p.user_id))];
+    try {
+      const { data, error } = await supabase
+        .from('community_posts')
+        .select('*')
+        .eq('category', activeCategory)
+        .is('parent_id', null)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+
+      const loadedPosts = (data || []) as Post[];
+      setPosts(loadedPosts);
+      setFeedError(null);
+      const userIds = [...new Set(loadedPosts.map(p => p.user_id))];
       await fetchProfiles(userIds);
-      await fetchLikesForPosts(data.map(p => p.id));
+      await fetchLikesForPosts(loadedPosts.map(p => p.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setFeedError(message);
+      toast({
+        title: L('تعذر تحميل منشورات المجتمع', 'Could not load community posts'),
+        description: message,
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   const fetchLikesForPosts = async (postIds: string[]) => {
@@ -193,10 +206,18 @@ const Community = () => {
     if (!user) return;
     const current = postLikes[postId];
     if (current?.liked) {
-      await supabase.from('community_likes').delete().eq('post_id', postId).eq('user_id', user.id);
+      const { error } = await supabase.from('community_likes').delete().eq('post_id', postId).eq('user_id', user.id);
+      if (error) {
+        toast({ title: L('تعذر تحديث الإعجاب', 'Could not update like'), description: error.message, variant: 'destructive' });
+        return;
+      }
       setPostLikes(prev => ({ ...prev, [postId]: { count: (prev[postId]?.count || 1) - 1, liked: false } }));
     } else {
-      await supabase.from('community_likes').insert({ post_id: postId, user_id: user.id });
+      const { error } = await supabase.from('community_likes').insert({ post_id: postId, user_id: user.id });
+      if (error) {
+        toast({ title: L('تعذر تحديث الإعجاب', 'Could not update like'), description: error.message, variant: 'destructive' });
+        return;
+      }
       setPostLikes(prev => ({ ...prev, [postId]: { count: (prev[postId]?.count || 0) + 1, liked: true } }));
     }
   };
@@ -382,19 +403,27 @@ const Community = () => {
 
   const handleReport = async () => {
     if (!reportPostId || !reportReason.trim() || !user) return;
-    await supabase.from('community_reports').insert({
+    const { error } = await supabase.from('community_reports').insert({
       post_id: reportPostId,
       reporter_id: user.id,
       reason: reportReason.trim(),
     });
+    if (error) {
+      toast({ title: L('تعذر إرسال البلاغ', 'Could not submit report'), description: error.message, variant: 'destructive' });
+      return;
+    }
     toast({ title: L('تم الإبلاغ','Reported'), description: L('سيتم مراجعة البلاغ من قبل الإدارة','Our moderators will review the report') });
     setReportPostId(null);
     setReportReason('');
   };
 
   const handleDeletePost = async (postId: string) => {
-    await supabase.from('community_posts').delete().eq('id', postId);
-    fetchPosts();
+    const { error } = await supabase.from('community_posts').delete().eq('id', postId);
+    if (error) {
+      toast({ title: L('تعذر حذف المنشور', 'Could not delete post'), description: error.message, variant: 'destructive' });
+      return;
+    }
+    await fetchPosts();
   };
 
   // Admin functions
@@ -411,7 +440,11 @@ const Community = () => {
 
   const handleBanUser = async () => {
     if (!banUserId || !user) return;
-    await supabase.from('community_bans').insert({ user_id: banUserId, banned_by: user.id, reason: banReason });
+    const { error } = await supabase.from('community_bans').insert({ user_id: banUserId, banned_by: user.id, reason: banReason });
+    if (error) {
+      toast({ title: L('تعذّر الحظر', 'Could not ban user'), description: error.message, variant: 'destructive' });
+      return;
+    }
     toast({ title: L('تم الحظر','Banned'), description: L('تم حظر المستخدم بنجاح','User banned successfully') });
     setBanUserId('');
     setBanReason('');
@@ -419,7 +452,11 @@ const Community = () => {
   };
 
   const handleUnban = async (userId: string) => {
-    await supabase.from('community_bans').delete().eq('user_id', userId);
+    const { error } = await supabase.from('community_bans').delete().eq('user_id', userId);
+    if (error) {
+      toast({ title: L('تعذّر رفع الحظر', 'Could not lift the ban'), description: error.message, variant: 'destructive' });
+      return;
+    }
     loadAdminData();
   };
 
@@ -731,11 +768,23 @@ const Community = () => {
               </CardContent>
             </Card>
 
+            {feedError && (
+              <Card>
+                <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
+                  <p className="text-sm text-destructive">{L('تعذر تحميل المنشورات. تحقق من الاتصال وحاول مرة أخرى.', 'Could not load posts. Check your connection and try again.')}</p>
+                  <Button variant="outline" size="sm" onClick={() => void fetchPosts()} disabled={isLoading}>
+                    {isLoading ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
+                    {L('إعادة المحاولة', 'Try again')}
+                  </Button>
+                </CardContent>
+              </Card>
+            )}
+
             {isLoading && posts.length === 0 ? (
               <div className="text-center py-12">
                 <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
               </div>
-            ) : filteredPosts.length === 0 ? (
+            ) : feedError ? null : filteredPosts.length === 0 ? (
               <div className="text-center py-12 text-muted-foreground">
                 <MessageCircle className="h-12 w-12 mx-auto mb-4 opacity-50" />
                 <p>{L('لا توجد منشورات بعد. كن أول من ينشر!','No posts yet. Be the first to post!')}</p>

@@ -79,10 +79,9 @@ const FindDoctor = () => {
   const fetchDoctors = async () => {
     setIsLoading(true);
     try {
-      // Use secure view that hides sensitive data (cv_url, portfolio_url)
+      // This RPC exposes only public doctor fields and omits community-banned doctors.
       const { data, error } = await supabase
-        .from('doctors_public' as any)
-        .select('*');
+        .rpc('get_doctors_public');
 
       if (error) throw error;
 
@@ -90,12 +89,8 @@ const FindDoctor = () => {
       if (data) {
         const doctorsWithProfiles = await Promise.all(
           data.map(async (doctor: any) => {
-            const { data: profile } = await supabase
-              .from('profiles_public' as any)
-              .select('full_name, avatar_url')
-              .eq('user_id', doctor.user_id)
-              .maybeSingle();
-            return { ...doctor, profile };
+            const { data: profiles } = await supabase.rpc('get_profile_public', { profile_user_id: doctor.user_id });
+            return { ...doctor, profile: profiles?.[0] ?? null };
           })
         );
         setDoctors(doctorsWithProfiles);
@@ -187,7 +182,7 @@ const FindDoctor = () => {
           user_id: user.id,
           rating: userRating,
           review: userReview
-        });
+        }, { onConflict: 'doctor_id,user_id' });
 
       if (error) throw error;
 
@@ -202,9 +197,14 @@ const FindDoctor = () => {
       fetchDoctors();
     } catch (error) {
       console.error('Error submitting rating:', error);
+      const message = error instanceof Error
+        ? error.message
+        : typeof error === 'object' && error !== null && 'message' in error
+          ? String((error as { message: unknown }).message)
+          : L('حدث خطأ أثناء إضافة التقييم', 'Something went wrong adding the rating');
       toast({
         title: L('خطأ','Error'),
-        description: L('حدث خطأ أثناء إضافة التقييم','Something went wrong adding the rating'),
+        description: message,
         variant: 'destructive'
       });
     }

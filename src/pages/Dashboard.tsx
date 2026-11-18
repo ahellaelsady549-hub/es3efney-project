@@ -13,30 +13,31 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from '@/hooks/use-toast';
 import { ProfileAvatar } from '@/components/ProfileAvatar';
 import { Header as SiteHeader } from '@/components/Header';
+import NutritionGoals from '@/pages/NutritionGoals';
 import NotificationSettings from '@/components/NotificationSettings';
 import { 
   Pill, 
   Utensils, 
   Brain, 
-  LogOut, 
   Plus, 
   Trash2, 
   Bell, 
   BellOff,
-  Home,
   Heart,
   Activity,
   Stethoscope,
   Calendar,
   Link as LinkIcon,
   Volume2,
-  VolumeX
+  VolumeX,
+  Target
 } from 'lucide-react';
 import { treatments } from '@/data/treatments';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { WorkoutProgress } from '@/components/gym/WorkoutProgress';
  
 import { DoctorSchedule } from '@/components/chat/DoctorSchedule';
+import { UpcomingAppointmentCountdown } from '@/components/chat/UpcomingAppointmentCountdown';
 
 import { playMedicationReminderSound, requestWebNotificationPermission, stopMedicationReminderSound } from '@/services/pushNotifications';
 
@@ -103,7 +104,7 @@ interface UserDisease {
 }
 
 const Dashboard = () => {
-  const { user, signOut, loading } = useAuth();
+  const { user, loading } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
   const { L } = useLanguage();
@@ -358,11 +359,6 @@ const Dashboard = () => {
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
-
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -379,22 +375,12 @@ const Dashboard = () => {
 
       {/* Page bar */}
       <header className="w-full border-b border-border bg-background/95">
-        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+        <div className="container mx-auto px-4 py-4 flex items-center">
           <div className="flex items-center gap-3">
             <Heart className="w-8 h-8 text-primary" />
             <h1 className="text-xl font-bold bg-gradient-medical bg-clip-text text-transparent">
               {L('لوحة التحكم', 'Dashboard')}
             </h1>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
-              <Home className="w-4 h-4 ml-2" />
-              {L('الرئيسية', 'Home')}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={handleSignOut} className="text-destructive hover:text-destructive hover:bg-destructive/10">
-              <LogOut className="w-4 h-4 ml-2" />
-              {L('خروج', 'Sign out')}
-            </Button>
           </div>
         </div>
       </header>
@@ -442,11 +428,13 @@ const Dashboard = () => {
           </CardContent>
         </Card>
 
+        <UpcomingAppointmentCountdown userId={user.id} doctorId={myDoctorId} />
+
         {myDoctorId && <div className="mb-6"><DoctorSchedule doctorId={myDoctorId} /></div>}
 
         {/* Tabs */}
         <Tabs defaultValue="medications" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 sm:grid-cols-6 h-auto">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-7">
             <TabsTrigger value="medications" className="flex items-center gap-2">
               <Pill className="w-4 h-4" />
               {L('أدويتي', 'My Medications')}
@@ -470,6 +458,10 @@ const Dashboard = () => {
             <TabsTrigger value="settings" className="flex items-center gap-2">
               <Bell className="w-4 h-4" />
               {L('الإشعارات', 'Notifications')}
+            </TabsTrigger>
+            <TabsTrigger value="goals" className="flex items-center gap-2">
+              <Target className="w-4 h-4" />
+              {L('أهدافي الغذائية', 'Nutrition goals')}
             </TabsTrigger>
           </TabsList>
 
@@ -849,6 +841,10 @@ const Dashboard = () => {
           {/* Settings Tab */}
           <TabsContent value="settings">
             <NotificationSettings />
+          </TabsContent>
+
+          <TabsContent value="goals">
+            <NutritionGoals embedded />
           </TabsContent>
         </Tabs>
       </main>

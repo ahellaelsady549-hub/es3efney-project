@@ -7,16 +7,38 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { toast } from 'sonner';
-import { Dumbbell, CheckCircle2, Loader2, Save, Plus, Trash2, Pencil } from 'lucide-react';
+import { Dumbbell, CheckCircle2, Loader2, Save, Plus, Trash2, Pencil, PlayCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import type { Json } from '@/integrations/supabase/types';
 import { gymPrograms, getProgram, type GymDay, type GymProgram } from '@/data/gymPrograms';
 import { gymMuscleGroups } from '@/data/gymExerciseCatalog';
+import { getGymExerciseInstructions, getGymExerciseVideo } from '@/data/gymExerciseVideos';
 import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const CUSTOM_PROGRAM_KEY = 'custom';
+const customProgramStorageKey = (userId: string) => `es3efny_gym_custom_program:${userId}`;
+
+const readLocalCustomProgram = (key: string): GymProgram | null => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? parseCustomProgram(JSON.parse(raw)) : null;
+  } catch (error) {
+    console.warn('Unable to restore the local custom workout plan:', error);
+    return null;
+  }
+};
+
+const saveLocalCustomProgram = (key: string, program: GymProgram) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(serializeCustomProgram(program)));
+    return true;
+  } catch (error) {
+    console.warn('Unable to save the local custom workout plan:', error);
+    return false;
+  }
+};
 
 const createDay = (index: number): GymDay => {
   const name = `Day ${index + 1}`;
@@ -110,6 +132,7 @@ const serializeCustomProgram = (program: GymProgram): Json => ({
 export const GymPrograms = () => {
   const { user } = useAuth();
   const { L, language } = useLanguage();
+  const localCustomProgramKey = user ? customProgramStorageKey(user.id) : null;
   const [selected, setSelected] = useState<string | null>(null);
   const [activeDay, setActiveDay] = useState<string | null>(null);
   const [done, setDone] = useState<Set<string>>(new Set());
@@ -123,6 +146,7 @@ export const GymPrograms = () => {
   const [customName, setCustomName] = useState('');
   const [customDays, setCustomDays] = useState<GymDay[]>([]);
   const [exerciseDrafts, setExerciseDrafts] = useState<Record<string, string>>({});
+  const [expandedExerciseHelp, setExpandedExerciseHelp] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!user) { setLoading(false); return; }
@@ -133,17 +157,29 @@ export const GymPrograms = () => {
         supabase.from('gym_workout_logs').select('day_key, exercise_name, completed, weight_kg, reps, sets').eq('user_id', user.id).eq('log_date', todayISO()),
         supabase.from('gym_workout_logs').select('exercise_name, weight_kg, log_date').eq('user_id', user.id).lt('log_date', todayISO()).not('weight_kg', 'is', null).order('log_date', { ascending: true }),
       ]);
-      const fetchError = programError || customError || logsError || historyError;
+      const localCustomPlan = localCustomProgramKey ? readLocalCustomProgram(localCustomProgramKey) : null;
+      const savedCustomPlan = (custom ? parseCustomProgram(custom.plan) : null) ?? localCustomPlan;
+      const fetchError = programError || logsError || historyError || (customError && !localCustomPlan ? customError : null);
       if (fetchError) toast.error(L('تعذّر تحميل جدول التمارين أو السجلات','Could not load your workout plan or logs'));
-      const savedCustomPlan = custom ? parseCustomProgram(custom.plan) : null;
       if (savedCustomPlan) {
         setCustomProgram(savedCustomPlan);
+        if (localCustomProgramKey) saveLocalCustomProgram(localCustomProgramKey, savedCustomPlan);
+        if (!custom && localCustomPlan) {
+          const { error: syncError } = await supabase.from('gym_user_custom_programs')
+            .upsert({ user_id: user.id, plan: serializeCustomProgram(localCustomPlan) }, { onConflict: 'user_id' });
+          if (!syncError) {
+            await supabase.from('gym_user_program').upsert({ user_id: user.id, program_key: CUSTOM_PROGRAM_KEY }, { onConflict: 'user_id' });
+          } else {
+            console.warn('The cached custom workout plan is still waiting to sync:', syncError);
+          }
+        }
       }
-      if (prog?.program_key) {
-        setSelected(prog.program_key);
-        const selectedProgram = prog.program_key === CUSTOM_PROGRAM_KEY
+      const savedProgramKey = prog?.program_key ?? (savedCustomPlan ? CUSTOM_PROGRAM_KEY : null);
+      if (savedProgramKey) {
+        setSelected(savedProgramKey);
+        const selectedProgram = savedProgramKey === CUSTOM_PROGRAM_KEY
           ? savedCustomPlan
-          : getProgram(prog.program_key);
+          : getProgram(savedProgramKey);
         setActiveDay(selectedProgram?.days[0]?.key ?? null);
       }
       setDone(new Set((logs ?? []).filter((l) => l.completed).map((l) => `${l.day_key}|${l.exercise_name}`)));
@@ -156,20 +192,25 @@ export const GymPrograms = () => {
       setLoading(false);
     };
     load();
-  }, [user, L]);
+  }, [user, L, localCustomProgramKey]);
 
   const chooseProgram = async (key: string) => {
     if (!user) return;
     const { error } = await supabase
       .from('gym_user_program')
       .upsert({ user_id: user.id, program_key: key }, { onConflict: 'user_id' });
-    if (error) toast.error(L('تعذّر حفظ النظام','Could not save the program'));
-    else {
+    const selectedProgram = key === CUSTOM_PROGRAM_KEY ? customProgram : getProgram(key);
+    if (key === CUSTOM_PROGRAM_KEY && error) {
+      console.error('Unable to sync the custom workout selection:', error);
       setSelected(key);
-      const selectedProgram = key === CUSTOM_PROGRAM_KEY ? customProgram : getProgram(key);
       setActiveDay(selectedProgram?.days[0]?.key ?? null);
-      toast.success(L('تم اختيار النظام','Program selected'));
+      toast.message(L('تم اختيار الجدول على هذا الجهاز، وتعذرت مزامنته مع الحساب.', 'Plan selected on this device; cloud sync is unavailable.'));
+      return;
     }
+    if (error) { toast.error(L(`تعذّر حفظ النظام: ${error.message}`, `Could not save the program: ${error.message}`)); return; }
+    setSelected(key);
+    setActiveDay(selectedProgram?.days[0]?.key ?? null);
+    toast.success(L('تم اختيار النظام','Program selected'));
   };
 
   const openCustomEditor = () => {
@@ -212,19 +253,19 @@ export const GymPrograms = () => {
       days: customDays,
     };
 
+    if (localCustomProgramKey) saveLocalCustomProgram(localCustomProgramKey, plan);
+
     const { error: savePlanError } = await supabase
       .from('gym_user_custom_programs')
       .upsert({ user_id: user.id, plan: serializeCustomProgram(plan) }, { onConflict: 'user_id' });
     if (savePlanError) {
       console.error('Unable to save the custom workout plan:', savePlanError);
-      const migrationMissing = savePlanError.code === '42P01' || savePlanError.code === 'PGRST205';
-      toast.error(migrationMissing
-        ? L(
-          'جدول حفظ البرامج المخصصة غير موجود في قاعدة البيانات. طبّق ترحيل Supabase 20261109040000_gym_custom_programs.sql ثم أعد المحاولة.',
-          'The custom workout table is missing from the database. Apply Supabase migration 20261109040000_gym_custom_programs.sql, then try again.'
-        )
-        : L(`تعذّر حفظ الجدول: ${savePlanError.message}`, `Could not save the plan: ${savePlanError.message}`));
+      setCustomProgram(plan);
+      setSelected(CUSTOM_PROGRAM_KEY);
+      setActiveDay(plan.days[0]?.key ?? null);
+      setCustomDialogOpen(false);
       setSavingCustomProgram(false);
+      toast.message(L('تم حفظ الجدول على هذا الجهاز. سنزامنه مع الحساب عند توفر قاعدة البيانات.', 'Plan saved on this device and will sync when the database is available.'));
       return;
     }
     setCustomProgram(plan);
@@ -234,11 +275,11 @@ export const GymPrograms = () => {
       .upsert({ user_id: user.id, program_key: CUSTOM_PROGRAM_KEY }, { onConflict: 'user_id' });
     if (selectPlanError) {
       console.error('Custom workout plan saved, but activation failed:', selectPlanError);
-      toast.error(L(
-        `تم حفظ الجدول لكن تعذّر تفعيله: ${selectPlanError.message}`,
-        `The plan was saved, but could not be activated: ${selectPlanError.message}`
-      ));
+      setSelected(CUSTOM_PROGRAM_KEY);
+      setActiveDay(plan.days[0]?.key ?? null);
+      setCustomDialogOpen(false);
       setSavingCustomProgram(false);
+      toast.message(L('تم حفظ الجدول وتفعيله على هذا الجهاز؛ تعذرت مزامنته مع الحساب.', 'Plan saved and activated on this device; cloud sync is unavailable.'));
       return;
     }
 
@@ -612,6 +653,23 @@ export const GymPrograms = () => {
                         <span className={`text-sm flex-1 ${checked ? 'line-through text-muted-foreground' : ''}`}>{label}</span>
                         {last[ex] !== undefined && <Badge variant="outline" className="text-xs">{L('آخر مرة','Last')}: {last[ex]} kg</Badge>}
                       </label>
+                      {(() => {
+                        const exerciseName = day.exercisesEn[idx] ?? ex;
+                        const video = getGymExerciseVideo(exerciseName);
+                        const helpOpen = Boolean(expandedExerciseHelp[id]);
+                        return <div className="space-y-2 ps-8">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <a href={video.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-xs font-medium text-primary transition-colors hover:bg-primary/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label={`${L('Exercise video guide', 'Exercise video guide')}: ${label}`} title={video.source}>
+                              <PlayCircle className="h-3.5 w-3.5" />{video.direct ? L('فيديو التمرين', 'Exercise video') : L('فيديوهات مطابقة', 'Matching videos')}
+                            </a>
+                            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" aria-expanded={helpOpen} onClick={() => setExpandedExerciseHelp((current) => ({ ...current, [id]: !current[id] }))}>
+                              {helpOpen ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              {helpOpen ? L('إخفاء طريقة الأداء', 'Hide exercise guide') : L('طريقة الأداء ومدى الحركة', 'Form and range of motion')}
+                            </Button>
+                          </div>
+                          {helpOpen && <p className="rounded-md border border-primary/10 bg-background px-3 py-2 text-xs leading-6 text-muted-foreground">{getGymExerciseInstructions(exerciseName, language === 'en')}</p>}
+                        </div>;
+                      })()}
                       <div className="flex flex-wrap items-center gap-2">
                         <Input type="number" inputMode="decimal" min={0} placeholder={L('الوزن كجم','Weight kg')} value={en.weight} onChange={(e) => setField(id, 'weight', e.target.value)} className="h-9 w-28" />
                         <Input type="number" inputMode="numeric" min={0} placeholder={L('عدّات','Reps')} value={en.reps} onChange={(e) => setField(id, 'reps', e.target.value)} className="h-9 w-24" />

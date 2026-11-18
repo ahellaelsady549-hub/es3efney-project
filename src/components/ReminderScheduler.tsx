@@ -78,7 +78,7 @@ export const ReminderScheduler = () => {
             .eq('user_id', user.id)
             .eq('status', 'confirmed')
             .gte('starts_at', new Date(now.getTime() - APPOINTMENT_GRACE_PERIOD_MS).toISOString())
-            .lte('starts_at', new Date(now.getTime() + 61 * 60 * 1000).toISOString()),
+            .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString()),
         ]);
         if (medicationError) throw medicationError;
         if (appointmentError) throw appointmentError;
@@ -113,7 +113,6 @@ export const ReminderScheduler = () => {
           for (const appointment of appointments ?? []) {
             const startsAt = new Date(appointment.starts_at);
             const reminderStages = [
-              { offset: 60 * 60 * 1000, label: '1h', sound: playUpcomingAppointmentReminderSound },
               { offset: 30 * 60 * 1000, label: '30m', sound: playUpcomingAppointmentReminderSound },
               { offset: 0, label: 'now', sound: playAppointmentReminderSound },
             ];

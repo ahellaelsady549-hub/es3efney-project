@@ -35,6 +35,7 @@ import { ConnectionNotice } from "@/components/ConnectionNotice";
 const NotFound = lazy(() => import("./pages/NotFound"));
 const AskMePage = lazy(() => import("./pages/AskMePage"));
 const FirstAidAcademy = lazy(() => import("./pages/FirstAidAcademy"));
+const HowToUsePage = lazy(() => import("./pages/HowToUsePage"));
 
 const queryClient = new QueryClient();
 
@@ -65,6 +66,7 @@ const AnimatedRoutes = () => {
         <Route path="/personal-diagnosis/results" element={<DiagnosisResults />} />
         <Route path="/ask-me" element={<AskMePage />} />
         <Route path="/first-aid-academy" element={<FirstAidAcademy />} />
+        <Route path="/how-to-use" element={<HowToUsePage />} />
         <Route path="/install" element={<Install />} />
         <Route path="/community" element={<Community />} />
         <Route path="/gym" element={<Gym />} />

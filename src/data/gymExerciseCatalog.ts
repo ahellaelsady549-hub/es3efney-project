@@ -113,7 +113,7 @@ export const gymMuscleGroups: GymMuscleGroup[] = [
   },
   {
     id: 'glutes',
-    nameAr: 'مؤخرة',
+    nameAr: 'العضلات الخلفية (الأرداف)',
     nameEn: 'Glutes',
     exercises: [
       { nameAr: 'هيب ثراست بالبار', nameEn: 'Barbell Hip Thrust' },

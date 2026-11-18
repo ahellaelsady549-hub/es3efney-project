@@ -194,6 +194,7 @@ export const updateWebPushPreferences = async (
 
 let medicationReminderAudio: HTMLAudioElement | null = null;
 let upcomingAppointmentAudio: HTMLAudioElement | null = null;
+let medicationReminderTimeout: number | undefined;
 
 export const playMedicationReminderSound = async (): Promise<void> => {
   if (!medicationReminderAudio) {
@@ -202,15 +203,22 @@ export const playMedicationReminderSound = async (): Promise<void> => {
     medicationReminderAudio.volume = 0.8;
   }
 
+  if (medicationReminderTimeout !== undefined) window.clearTimeout(medicationReminderTimeout);
   medicationReminderAudio.currentTime = 0;
-  await medicationReminderAudio.play();
+  const playback = medicationReminderAudio.play();
+  medicationReminderTimeout = window.setTimeout(() => {
+    medicationReminderAudio?.pause();
+    if (medicationReminderAudio) medicationReminderAudio.currentTime = 0;
+    medicationReminderTimeout = undefined;
+  }, 6000);
+  await playback;
 };
 
 export const playAppointmentReminderSound = playMedicationReminderSound;
 
 export const playUpcomingAppointmentReminderSound = async (): Promise<void> => {
   if (!upcomingAppointmentAudio) {
-    upcomingAppointmentAudio = new Audio('/freesound_community-shaking-pill-bottle-94736.mp3');
+    upcomingAppointmentAudio = new Audio('/universfield-new-notification-09-352705.mp3');
     upcomingAppointmentAudio.preload = 'auto';
     upcomingAppointmentAudio.volume = 0.8;
   }
@@ -220,6 +228,10 @@ export const playUpcomingAppointmentReminderSound = async (): Promise<void> => {
 };
 
 export const stopMedicationReminderSound = () => {
+  if (medicationReminderTimeout !== undefined) {
+    window.clearTimeout(medicationReminderTimeout);
+    medicationReminderTimeout = undefined;
+  }
   if (medicationReminderAudio) {
     medicationReminderAudio.pause();
     medicationReminderAudio.currentTime = 0;

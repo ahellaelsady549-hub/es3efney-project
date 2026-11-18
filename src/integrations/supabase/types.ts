@@ -449,6 +449,30 @@ export type Database = {
         }
         Relationships: []
       }
+      doctor_availability: {
+        Row: { id: string; doctor_id: string; weekday: number; start_time: string; end_time: string; created_at: string }
+        Insert: { id?: string; doctor_id: string; weekday: number; start_time: string; end_time: string; created_at?: string }
+        Update: { id?: string; doctor_id?: string; weekday?: number; start_time?: string; end_time?: string; created_at?: string }
+        Relationships: []
+      }
+      doctor_bookings: {
+        Row: { id: string; doctor_id: string; user_id: string; starts_at: string; ends_at: string; status: string; created_at: string; updated_at: string }
+        Insert: { id?: string; doctor_id: string; user_id: string; starts_at: string; ends_at: string; status?: string; created_at?: string; updated_at?: string }
+        Update: { id?: string; doctor_id?: string; user_id?: string; starts_at?: string; ends_at?: string; status?: string; created_at?: string; updated_at?: string }
+        Relationships: []
+      }
+      chat_bans: {
+        Row: { id: string; target_user_id: string | null; conversation_id: string | null; reason: string | null; expires_at: string | null; created_by: string; created_at: string }
+        Insert: { id?: string; target_user_id?: string | null; conversation_id?: string | null; reason?: string | null; expires_at?: string | null; created_by: string; created_at?: string }
+        Update: { id?: string; target_user_id?: string | null; conversation_id?: string | null; reason?: string | null; expires_at?: string | null; created_by?: string; created_at?: string }
+        Relationships: []
+      }
+      identity_applications: {
+        Row: { id: string; user_id: string; national_id: string; governorate: string; home_address: string; id_front_path: string; id_back_path: string; account_type: string; status: string; ai_review: string | null; rejection_reason: string | null; reviewed_at: string | null; created_at: string }
+        Insert: { id?: string; user_id: string; national_id: string; governorate: string; home_address: string; id_front_path: string; id_back_path: string; account_type: string; status?: string; ai_review?: string | null; rejection_reason?: string | null; reviewed_at?: string | null; created_at?: string }
+        Update: { id?: string; user_id?: string; national_id?: string; governorate?: string; home_address?: string; id_front_path?: string; id_back_path?: string; account_type?: string; status?: string; ai_review?: string | null; rejection_reason?: string | null; reviewed_at?: string | null; created_at?: string }
+        Relationships: []
+      }
       gym_nutrition_goals: {
         Row: {
           calories: number | null
@@ -530,6 +554,39 @@ export type Database = {
           plan?: Json
           updated_at?: string
           user_id?: string
+        }
+        Relationships: []
+      }
+      platform_tutorial_videos: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          sort_order: number
+          storage_path: string | null
+          title: string
+          video_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          sort_order?: number
+          storage_path?: string | null
+          title: string
+          video_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          sort_order?: number
+          storage_path?: string | null
+          title?: string
+          video_url?: string | null
         }
         Relationships: []
       }
@@ -1023,6 +1080,18 @@ export type Database = {
           streak: number
         }[]
       }
+      claim_first_aid_daily_mission: {
+        Args: { p_answer: string }
+        Returns: { points: number; current_streak: number; claimed: boolean }[]
+      }
+      claim_first_aid_game_xp: {
+        Args: { p_activity_day: string; p_game_id: string }
+        Returns: { points: number; current_streak: number; last_active: string; claimed: boolean; xp_awarded: number }[]
+      }
+      sync_first_aid_daily_mission: {
+        Args: { p_mission_day: string }
+        Returns: { points: number; current_streak: number; last_active: string; claimed: boolean }[]
+      }
       get_public_site_stats: { Args: never; Returns: Json }
       get_community_stats: { Args: never; Returns: Json }
       get_doctors_public: {
@@ -1083,6 +1152,12 @@ export type Database = {
         }
         Returns: boolean
       }
+      can_chat: { Args: { _conversation_id: string; _user_id: string }; Returns: boolean }
+      get_doctor_busy_slots_v2: {
+        Args: { _doctor_id: string }
+        Returns: { starts_at: string; ends_at: string; status: string }[]
+      }
+      request_doctor_booking: { Args: { _doctor_id: string; _starts_at: string }; Returns: string }
       is_user_banned: { Args: { _user_id: string }; Returns: boolean }
       request_doctor_role: { Args: { p_user_id: string }; Returns: boolean }
     }

@@ -107,6 +107,21 @@ const ArticleDetail = () => {
             ))}
           </div>
 
+          {article.sources?.length ? (
+            <section className="mt-8 rounded-xl border bg-muted/30 p-4">
+              <h2 className="mb-2 text-lg font-semibold">{L('مصادر موثوقة', 'Trusted sources')}</h2>
+              <ul className="space-y-2">
+                {article.sources.map((source) => (
+                  <li key={source.url}>
+                    <a className="text-sm text-primary underline-offset-4 hover:underline" href={source.url} target="_blank" rel="noopener noreferrer">
+                      {source.title}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
           <section className="mt-10">
             <h2 className="mb-3 text-xl font-semibold">{L('أسئلة شائعة', 'Frequently Asked Questions')}</h2>
             <Accordion type="single" collapsible>

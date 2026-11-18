@@ -12,6 +12,10 @@ import { allFirstAidLessons } from '@/data/firstAidPracticeLessons';
 import { normalizeSearchText } from '@/lib/search';
 import { useFirstAidProgress } from '@/hooks/useFirstAidProgress';
 import { useAuth } from '@/contexts/AuthContext';
+import { RescueSimulator } from '@/components/firstAid/RescueSimulator';
+import { LessonHealthChat } from '@/components/firstAid/LessonHealthChat';
+import { RescueWorldHub } from '@/components/firstAid/RescueWorldHub';
+import { FirstAidGameLab } from '@/components/firstAid/FirstAidGameLab';
 
 const PASSING_SCORE = 2;
 const quizQuestionIndexes = [0, 1, 2];
@@ -135,7 +139,7 @@ const FirstAidIllustration = ({ stepNumber, stepLabel, illustration }: {
 const FirstAidAcademy = () => {
   const { L, language } = useLanguage();
   const { user } = useAuth();
-  const { progress, leaderboard, syncStatus, completeLesson, setProgress } = useFirstAidProgress();
+  const { progress, leaderboard, syncStatus, completeLesson, completeDailyMission, completeGameActivity } = useFirstAidProgress();
   const [activeLessonId, setActiveLessonId] = useState(allFirstAidLessons[0]?.id ?? 0);
   const [search, setSearch] = useState('');
   const [stepIndex, setStepIndex] = useState(0);
@@ -145,21 +149,43 @@ const FirstAidAcademy = () => {
   const [lessonRead, setLessonRead] = useState(false);
   const [revealedStep, setRevealedStep] = useState(0);
   const [quizKey, setQuizKey] = useState(0);
-  const [navigateToNextLesson, setNavigateToNextLesson] = useState(false);
   const lessonScrollRef = useRef<HTMLDivElement>(null);
-
-  // Handle navigation to next lesson after progress update
-  useEffect(() => {
-    if (navigateToNextLesson) {
-      setNavigateToNextLesson(false);
-      nextLesson();
-    }
-  }, [navigateToNextLesson]);
 
   const activeLesson = allFirstAidLessons.find((tip) => tip.id === activeLessonId) ?? allFirstAidLessons[0];
   const lessonTitle = activeLesson ? (language === 'ar' ? activeLesson.titleAr : activeLesson.titleEn) : '';
   const lessonDescription = activeLesson ? (language === 'ar' ? activeLesson.descriptionAr : activeLesson.descriptionEn) : '';
   const lessonSteps = activeLesson ? (language === 'ar' ? activeLesson.stepsAr : activeLesson.stepsEn) : [];
+  const sourceNames = activeLesson?.sources?.map((s) => (language === 'ar' ? s.nameAr : s.nameEn)) ?? [];
+  const introMessages = activeLesson ? [
+    {
+      speaker: 'patient' as const,
+      ar: `هو إيه ${lessonTitle} بالظبط؟ وليه ممكن يحصل فجأة قدامي؟ وإزاي أتصرف صح من غير تردد؟`,
+      en: `What exactly is ${lessonTitle}? Why might it happen suddenly in front of me, and how can I respond correctly without hesitating?`,
+    },
+    {
+      speaker: 'helper' as const,
+      ar: `سؤال مهم — خلّينا نفهمها ببساطة.${lessonDescription ? ` ${lessonTitle}: ${lessonDescription}.` : ''} يعني إيه الحالة؟ هي موقف صحي/طبي يحتاج انتباه سريع، وقد تظهر بشكل مفاجئ أو تتدرج، وعلاماتها تختلف حسب الشخص وشدة الحالة.`,
+      en: `Important question — let’s break it down simply.${lessonDescription ? ` ${lessonTitle}: ${lessonDescription}.` : ''} It’s a health situation that needs prompt attention. It may appear suddenly or develop gradually, and signs can vary by person and severity.`,
+    },
+    {
+      speaker: 'helper' as const,
+      ar: `حالاتها وأشكالها: بعض الحالات لها أنواع أو درجات مختلفة (خفيفة، متوسطة، أو طارئة)، وأعراضها ممكن تشمل تغيّرات واضحة في الوعي أو التنفس أو الألم أو الحركة أو الشكل العام — راقب أي علامة غير معتادة. الأسباب وعوامل الخطر الشائعة: قد ترتبط بمشاكل صحية مزمنة، إصابات، عدوى، حساسية، حرارة/برد، إجهاد، أدوية، أو ظروف بيئية ونمط حياة؛ وتفاصيل كل حالة تختلف، لذلك نربط الفهم بالعلامات اللي قدامنا وبسياق الموقف.`,
+      en: `Forms and cases: some situations have different types or levels (mild, moderate, or emergency). Signs may include noticeable changes in awareness, breathing, pain, movement, or appearance — watch for anything unusual. Common causes and risk factors: they may relate to existing health conditions, injuries, infections, allergies, heat/cold, strain, medicines, or environmental and lifestyle factors. Details vary by case, so understanding should be guided by the signs you see and the situation.`,
+    },
+    {
+      speaker: 'helper' as const,
+      ar: sourceNames.length
+        ? `تأكيد المراجع: الشرح والخطوات في هذا الدرس مبنية على مصادر طبية موثوقة مرفقة هنا (${sourceNames.join('، ')}) — راجعها أسفل الدرس للتفاصيل الدقيقة. هذه المعلومات للتوعية والإسعافات الأولية ولا تغني عن الطبيب أو الإسعاف؛ لو فيه خطر اتصل بالطوارئ فورًا. يلا نبدأ الشرح العملي خطوة بخطوة.`
+        : `تأكيد المراجع: اتبع دائمًا إرشادات إسعافات أولية معتمدة ومصادر طبية موثوقة، واستشر مختصًا عند الحاجة. هذه المعلومات للتوعية ولا تغني عن الطبيب أو الإسعاف؛ لو فيه خطر اتصل بالطوارئ فورًا. يلا نبدأ الشرح العملي خطوة بخطوة.`,
+      en: sourceNames.length
+        ? `References check: this lesson’s explanation and steps are based on the trusted medical sources attached here (${sourceNames.join(', ')}) — review them below for full details. This is educational first-aid guidance and not a substitute for professional or emergency care; if there is danger, contact emergency services immediately. Now let’s begin the practical steps.`
+        : `References check: always follow recognized first-aid guidance and trusted medical sources, and seek professional advice when needed. This is educational and not a substitute for professional or emergency care; if there is danger, contact emergency services immediately. Now let’s begin the practical steps.`,
+    },
+  ] : [];
+  const conversationItems = [
+    ...introMessages.map((m, i) => ({ kind: 'intro' as const, index: i, speaker: m.speaker, ar: m.ar, en: m.en })),
+    ...lessonSteps.map((step, i) => ({ kind: 'step' as const, index: i, step })),
+  ];
   
   // Calculate correct answers using the same logic as getQuizOptions
   const correctAnswers = quizQuestionIndexes.filter((questionIndex) => {
@@ -231,6 +257,7 @@ const FirstAidAcademy = () => {
       observer = new IntersectionObserver((entries) => {
         entries.forEach((entry) => {
           if (!entry.isIntersecting) return;
+          if (!(entry.target instanceof HTMLElement)) return;
           const stepIndex = Number(entry.target.dataset.lessonStep);
           // Reveal sequentially - only reveal the next step
           if (stepIndex === revealedStep) {
@@ -297,20 +324,10 @@ const FirstAidAcademy = () => {
   const submitQuiz = () => {
     setQuizSubmitted(true);
     if (correctAnswers >= PASSING_SCORE) {
-      // Optimistically update progress so next lesson unlocks immediately
-      setProgress((prev) => ({
-        ...prev,
-        completedLessonIds: [...new Set([...prev.completedLessonIds, activeLessonId])],
-      }));
+      // Let the progress hook record both the lesson and its XP together.
+      // Optimistically marking it complete here used to suppress the local
+      // fallback reward whenever the Supabase request failed.
       void completeLesson(activeLessonId);
-
-      // Go straight to the next lesson (force = bypass the lock check)
-      const currentIndex = allFirstAidLessons.findIndex((tip) => tip.id === activeLessonId);
-      const next = allFirstAidLessons[currentIndex + 1];
-      if (next) {
-        startLesson(next.id, true);
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
     }
   };
 
@@ -336,6 +353,16 @@ const FirstAidAcademy = () => {
   };
   const nextLessonInSequence = allFirstAidLessons[allFirstAidLessons.findIndex((tip) => tip.id === activeLessonId) + 1];
   const isQuizPassed = completedLessons.has(activeLessonId);
+  const levels = [
+    { min: 0, ar: 'مسعف مبتدئ', en: 'Beginner Rescuer' },
+    { min: 100, ar: 'مستكشف الطوارئ', en: 'Emergency Explorer' },
+    { min: 300, ar: 'مساعد إنقاذ', en: 'Rescue Assistant' },
+    { min: 600, ar: 'مستجيب متقدم', en: 'Advanced Responder' },
+    { min: 1000, ar: 'بطل الإنقاذ', en: 'Rescue Hero' },
+  ];
+  const currentLevelIndex = levels.reduce((index, level, i) => progress.points >= level.min ? i : index, 0);
+  const currentLevel = levels[currentLevelIndex];
+  const nextLevel = levels[currentLevelIndex + 1];
 
   return (
     <div className="min-h-screen bg-background">
@@ -349,7 +376,7 @@ const FirstAidAcademy = () => {
             {L('تعلّم بالممارسة', 'Learn by doing')}
           </p>
           <h1 className="text-3xl font-bold md:text-4xl">
-            {L('أكاديمية الإسعافات الأولية', 'First-aid Academy')}
+            {L('Rescue World | عالم الإنقاذ', 'Rescue World')}
           </h1>
           <p className="mt-3 max-w-3xl leading-7 text-white/85">
             {L(
@@ -369,6 +396,24 @@ const FirstAidAcademy = () => {
             />
           </div>
         </header>
+
+        <RescueWorldHub
+          xp={progress.points}
+          streak={progress.streak}
+          completed={completedLessons.size}
+          total={allFirstAidLessons.length}
+          onOpenLesson={(id) => { startLesson(id, true); window.setTimeout(() => document.getElementById('active-lesson')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+          onOpenQuiz={(id) => { startLesson(id, true); setQuizStarted(true); window.setTimeout(() => document.getElementById('active-lesson')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50); }}
+          completeMission={completeDailyMission}
+        />
+
+        <Card className="mb-6 border-secondary/30 bg-secondary/5 p-4 md:p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{L('مستواك الحالي', 'Current level')}</p><p className="mt-1 text-lg font-bold">{language === 'ar' ? currentLevel.ar : currentLevel.en}</p></div>
+            <div className="rounded-full bg-amber-500/10 px-4 py-2 font-bold text-amber-700 dark:text-amber-300">{progress.points} XP</div>
+          </div>
+          {nextLevel ? <div className="mt-3"><div className="mb-1 flex justify-between text-xs text-muted-foreground"><span>{language === 'ar' ? currentLevel.ar : currentLevel.en}</span><span>{language === 'ar' ? nextLevel.ar : nextLevel.en} · {nextLevel.min} XP</span></div><Progress value={Math.min(100, ((progress.points - currentLevel.min) / (nextLevel.min - currentLevel.min)) * 100)} className="h-2" /></div> : <p className="mt-2 text-sm text-muted-foreground">{L('وصلت إلى أعلى مستوى!', 'You reached the highest level!')}</p>}
+        </Card>
 
         <section aria-label={L('إنجازات التعلم', 'Learning achievements')} className="mb-6 grid gap-3 sm:grid-cols-3">
           <Card className="p-4">
@@ -444,8 +489,11 @@ const FirstAidAcademy = () => {
           </a>
         </div>
 
+        <FirstAidGameLab onComplete={completeGameActivity} />
+        <RescueSimulator onComplete={completeGameActivity} />
+
         {activeLesson ? (
-          <section aria-labelledby="active-lesson-title" className="mb-12">
+          <section id="active-lesson" aria-labelledby="active-lesson-title" className="mb-12 scroll-mt-20">
             <Card className="overflow-hidden shadow-card">
               <CardContent className="p-5 md:p-8">
                 <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -478,6 +526,7 @@ const FirstAidAcademy = () => {
                       className="first-aid-chat-scroll max-h-[36rem] space-y-4 overflow-y-auto overscroll-contain rounded-xl border border-border p-3 md:p-4"
                       aria-label={L('محادثة الدرس، مرّر لقراءة الخطوات التالية', 'Lesson conversation, scroll to read the next steps')}
                     >
+                      <LessonHealthChat lesson={activeLesson} />
                       {lessonSteps.map((step, index) => (
                         <article
                           key={`${activeLessonId}-${index}`}

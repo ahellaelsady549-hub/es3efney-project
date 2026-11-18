@@ -4,6 +4,9 @@ export interface FirstAidProgress {
   lastActive: string | null;
   completedLessonIds: number[];
   pendingLessonIds: number[];
+  pendingMissionDays: string[];
+  pendingGameClaims: string[];
+  claimedGameKeys: string[];
 }
 
 export const FIRST_AID_PROGRESS_KEY = 'es3efny_first_aid_progress';
@@ -14,6 +17,9 @@ export const emptyFirstAidProgress: FirstAidProgress = {
   lastActive: null,
   completedLessonIds: [],
   pendingLessonIds: [],
+  pendingMissionDays: [],
+  pendingGameClaims: [],
+  claimedGameKeys: [],
 };
 
 const getToday = () => new Date().toISOString().slice(0, 10);
@@ -34,6 +40,15 @@ export const readFirstAidProgress = (key: string): FirstAidProgress => {
         : [],
       pendingLessonIds: Array.isArray(value.pendingLessonIds)
         ? value.pendingLessonIds.filter((id): id is number => Number.isInteger(id) && id > 0)
+        : [],
+      pendingMissionDays: Array.isArray(value.pendingMissionDays)
+        ? value.pendingMissionDays.filter((day): day is string => typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day))
+        : [],
+      pendingGameClaims: Array.isArray(value.pendingGameClaims)
+        ? value.pendingGameClaims.filter((claim): claim is string => typeof claim === 'string' && /^[a-z-]+\|\d{4}-\d{2}-\d{2}$/.test(claim))
+        : [],
+      claimedGameKeys: Array.isArray(value.claimedGameKeys)
+        ? value.claimedGameKeys.filter((claim): claim is string => typeof claim === 'string' && /^[a-z-]+\|\d{4}-\d{2}-\d{2}$/.test(claim))
         : [],
     };
   } catch (error) {

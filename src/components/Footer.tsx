@@ -3,10 +3,8 @@ import { Link } from 'react-router-dom';
 import { useLanguage } from '@/contexts/LanguageContext';
 
 const TikTokIcon = () => (
-  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M16.5 3.5a5.5 5.5 0 0 1 0 11h2.5a5.5 5.5 0 0 1 0 11H16.5a5.5 5.5 0 0 1 0-11H19a5.5 5.5 0 0 1 0-11H16.5z" />
-    <path d="M12 3.5v17" />
-    <path d="M16.5 3.5h-4.5" />
+  <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M19.59 6.69a4.83 4.83 0 0 1-4.22-4.43V2h-3.8v13.67a2.9 2.9 0 1 1-2.9-2.9c.3 0 .59.05.86.13V9.03a6.8 6.8 0 0 0-.86-.06 6.7 6.7 0 1 0 6.7 6.7V8.6a8.5 8.5 0 0 0 4.22 1.12V5.93c.01.25.01.5 0 .76Z" />
   </svg>
 );
 
@@ -24,6 +22,7 @@ export const Footer = () => {
     { to: '/ask-me', label: L('اسألني', 'Ask me') },
     { to: '/articles', label: L('المقالات الصحية', 'Health articles') },
     { to: '/about', label: L('من نحن', 'About us') },
+    { to: '/how-to-use', label: L('كتالوج المنصة', 'Platform catalog') },
   ];
 
   return (

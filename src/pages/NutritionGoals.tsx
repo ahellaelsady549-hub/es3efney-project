@@ -23,7 +23,7 @@ interface Goals {
 
 const empty: Goals = { calories: '', protein: '', carbs: '', fats: '', goal: 'maintain' };
 
-const NutritionGoals = () => {
+const NutritionGoals = ({ embedded = false }: { embedded?: boolean }) => {
   const { user } = useAuth();
   const { t, dir, language, L } = useLanguage();
   const [goals, setGoals] = useState<Goals>(empty);
@@ -84,6 +84,7 @@ const NutritionGoals = () => {
   };
 
   if (!user) {
+    if (embedded) return null;
     return (
       <div className="min-h-screen bg-background" dir={dir}>
         <Header />
@@ -99,9 +100,9 @@ const NutritionGoals = () => {
 
   return (
     <div className="min-h-screen bg-background" dir={dir}>
-      <Header />
-      <main className="container mx-auto max-w-3xl px-4 py-8 animate-in fade-in duration-500">
-        <header className="mb-6">
+      {!embedded && <Header />}
+      <main className={embedded ? 'w-full animate-in fade-in duration-500' : 'container mx-auto max-w-3xl px-4 py-8 animate-in fade-in duration-500'}>
+        {!embedded && <header className="mb-6">
           <h1 className="flex items-center gap-2 text-3xl font-bold bg-gradient-medical bg-clip-text text-transparent">
             <Target className="h-7 w-7 text-primary" />
             {t('goals.title')}
@@ -112,7 +113,7 @@ const NutritionGoals = () => {
               'Set your daily calories, protein, carbs and fats — meal suggestions and analysis will be built around these goals.',
             )}
           </p>
-        </header>
+        </header>}
 
         {loading ? (
           <div className="flex justify-center py-10"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
@@ -175,7 +176,7 @@ const NutritionGoals = () => {
           </Card>
         )}
       </main>
-      <Footer />
+      {!embedded && <Footer />}
     </div>
   );
 };

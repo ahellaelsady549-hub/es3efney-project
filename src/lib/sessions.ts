@@ -13,7 +13,7 @@ export function availableSlots(date: Date, availability: AvailabilityRow[], book
       const s = new Date(date); s.setHours(Math.floor(m / 60), m % 60, 0, 0);
       const e = new Date(s.getTime() + SLOT_MIN * 60000);
       if (s <= now) continue;
-      const taken = bookings.some((b) => b.status === 'confirmed' && new Date(b.starts_at) < e && new Date(b.ends_at) > s);
+      const taken = bookings.some((b) => ['pending', 'confirmed'].includes(b.status) && new Date(b.starts_at) < e && new Date(b.ends_at) > s);
       if (!taken) out.push(s);
     }
   }

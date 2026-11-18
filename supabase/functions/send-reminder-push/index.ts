@@ -73,7 +73,7 @@ serve(async (request) => {
       .select('id,user_id,starts_at')
       .eq('status', 'confirmed')
       .gte('starts_at', new Date(now.getTime() - 2 * 60 * 1000).toISOString())
-      .lte('starts_at', new Date(now.getTime() + 61 * 60 * 1000).toISOString()),
+      .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString()),
   ]);
   const queryError = subscriptionsError || medicationsError || appointmentsError;
   if (queryError) {
@@ -109,7 +109,6 @@ serve(async (request) => {
       for (const appointment of (appointments ?? []).filter((item) => item.user_id === subscription.user_id)) {
         const startsAt = new Date(appointment.starts_at);
         for (const stage of [
-          { offset: 60 * 60 * 1000, key: '1h', body: 'موعد الطبيب بعد ساعة.' },
           { offset: 30 * 60 * 1000, key: '30m', body: 'موعد الطبيب بعد نصف ساعة.' },
           { offset: 0, key: 'now', body: 'حان موعد جلستك الطبية الآن.' },
         ]) {
