@@ -17,6 +17,12 @@ CREATE TABLE IF NOT EXISTS public.identity_applications (
 );
 ALTER TABLE public.identity_applications ENABLE ROW LEVEL SECURITY;
 
+ALTER TABLE public.doctors
+  ADD COLUMN IF NOT EXISTS cv_link text,
+  ADD COLUMN IF NOT EXISTS workplace_type text,
+  ADD COLUMN IF NOT EXISTS workplace_name text,
+  ADD COLUMN IF NOT EXISTS workplace_address text;
+
 GRANT SELECT, INSERT, UPDATE ON public.identity_applications TO authenticated;
 DROP POLICY IF EXISTS "Users view own identity application" ON public.identity_applications;
 CREATE POLICY "Users view own identity application"

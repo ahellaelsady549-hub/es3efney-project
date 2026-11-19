@@ -12,6 +12,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { toast } from 'sonner';
 import { ChatBansAdmin } from '@/components/chat/ChatBansAdmin';
+import { medicalSpecialties } from '@/data/specialties';
 
 type Doc = {
   id: string; full_name: string | null; email: string | null; specialty: string; bio: string | null;
@@ -34,6 +35,17 @@ type IdentityApplication = {
   reviewed_at: string | null;
   created_at: string;
   profile?: { full_name: string | null; email: string | null };
+  professional?: {
+    specialty: string;
+    bio: string | null;
+    cv_url: string | null;
+    cv_link: string | null;
+    portfolio_url: string | null;
+    ai_cv_review: string | null;
+    workplace_type: string | null;
+    workplace_name: string | null;
+    workplace_address: string | null;
+  };
 };
 
 const AdminPage = () => {
@@ -79,15 +91,22 @@ const AdminPage = () => {
     const applications = (identityResult.data ?? []) as IdentityApplication[];
     const userIds = [...new Set(applications.map((application) => application.user_id))];
     if (userIds.length) {
-      const { data: profiles, error: profilesError } = await supabase
-        .from('profiles')
-        .select('user_id, full_name, email')
-        .in('user_id', userIds);
+      const doctorUserIds = applications.filter((application) => application.account_type === 'doctor').map((application) => application.user_id);
+      const [profilesResult, doctorsResult] = await Promise.all([
+        supabase.from('profiles').select('user_id, full_name, email').in('user_id', userIds),
+        doctorUserIds.length
+          ? supabase.from('doctors').select('*').in('user_id', doctorUserIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
+      const { data: profiles, error: profilesError } = profilesResult;
       if (profilesError) console.error('Could not load applicant profiles:', profilesError);
       const profileByUserId = new Map((profiles ?? []).map((profile) => [profile.user_id, profile] as const));
+      if (doctorsResult.error) console.error('Could not load doctor application details:', doctorsResult.error);
+      const doctorByUserId = new Map((doctorsResult.data ?? []).map((doctor) => [doctor.user_id, doctor] as const));
       setIdentityApplications(applications.map((application) => ({
         ...application,
         profile: profileByUserId.get(application.user_id),
+        professional: doctorByUserId.get(application.user_id),
       })));
     } else {
       setIdentityApplications(applications);
@@ -148,6 +167,11 @@ const AdminPage = () => {
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const openExternalUrl = (url: string) => {
+    if (!/^https?:\/\//i.test(url)) return toast.error(L('الرابط غير صالح', 'Invalid link'));
+    window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
   const decideIdentity = async (application: IdentityApplication, approve: boolean) => {
     const reason = (reasons[application.id] ?? '').trim();
     if (!approve && reason.length < 5) return toast.error(L('اكتب سبب الرفض أو المراجعة (5 أحرف على الأقل)', 'Write a rejection/review reason (at least 5 characters)'));
@@ -201,6 +225,19 @@ const AdminPage = () => {
         <p><b>{L('الرقم القومي', 'National ID')}:</b> {application.national_id}</p>
         <p><b>{L('المحافظة', 'Governorate')}:</b> {application.governorate}</p>
         <p><b>{L('عنوان السكن', 'Home address')}:</b> {application.home_address}</p>
+        {application.professional && <div className="space-y-2 rounded-md border p-3">
+          <p className="font-semibold">{L('بيانات الطبيب المهنية', 'Professional details')}</p>
+          <p><b>{L('التخصص', 'Specialty')}:</b> {medicalSpecialties.find((specialty) => specialty.value === application.professional?.specialty)?.[L('labelAr', 'labelEn') as 'labelAr' | 'labelEn'] || application.professional.specialty}</p>
+          {application.professional.workplace_name && <p><b>{application.professional.workplace_type === 'clinic' ? L('العيادة', 'Clinic') : L('المستشفى', 'Hospital')}:</b> {application.professional.workplace_name}</p>}
+          {application.professional.workplace_address && <p><b>{L('عنوان جهة العمل', 'Workplace address')}:</b> {application.professional.workplace_address}</p>}
+          {application.professional.bio && <p><b>{L('النبذة', 'Bio')}:</b> {application.professional.bio}</p>}
+          {application.professional.ai_cv_review && <p className="whitespace-pre-wrap text-muted-foreground"><b>{L('مراجعة السيرة', 'CV review')}:</b> {application.professional.ai_cv_review}</p>}
+          <div className="flex flex-wrap gap-2">
+            {application.professional.cv_url && <Button size="lg" variant="outline" onClick={() => openCv(application.professional!.cv_url!)}><FileText className="h-4 w-4 me-1" />{L('عرض ملف CV', 'View CV PDF')}</Button>}
+            {application.professional.cv_link && <Button size="lg" variant="outline" onClick={() => openExternalUrl(application.professional!.cv_link!)}><LinkIcon className="h-4 w-4 me-1" />{L('رابط CV', 'CV link')}</Button>}
+            {application.professional.portfolio_url && <Button size="lg" variant="outline" onClick={() => openExternalUrl(application.professional!.portfolio_url!)}><LinkIcon className="h-4 w-4 me-1" />{L('رابط إضافي', 'Portfolio link')}</Button>}
+          </div>
+        </div>}
         <div className="flex flex-wrap gap-2">
           <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_front_path)}>{L('عرض وجه البطاقة', 'View ID front')}</Button>
           <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_back_path)}>{L('عرض ظهر البطاقة', 'View ID back')}</Button>

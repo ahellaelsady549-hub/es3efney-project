@@ -356,9 +356,13 @@ export type Database = {
           bio: string | null
           created_at: string
           cv_url: string | null
+          cv_link: string | null
           id: string
           is_verified: boolean | null
           portfolio_url: string | null
+          workplace_type: string | null
+          workplace_name: string | null
+          workplace_address: string | null
           rating: number | null
           rating_count: number | null
           rejection_reason: string | null
@@ -373,9 +377,13 @@ export type Database = {
           bio?: string | null
           created_at?: string
           cv_url?: string | null
+          cv_link?: string | null
           id?: string
           is_verified?: boolean | null
           portfolio_url?: string | null
+          workplace_type?: string | null
+          workplace_name?: string | null
+          workplace_address?: string | null
           rating?: number | null
           rating_count?: number | null
           rejection_reason?: string | null
@@ -390,9 +398,13 @@ export type Database = {
           bio?: string | null
           created_at?: string
           cv_url?: string | null
+          cv_link?: string | null
           id?: string
           is_verified?: boolean | null
           portfolio_url?: string | null
+          workplace_type?: string | null
+          workplace_name?: string | null
+          workplace_address?: string | null
           rating?: number | null
           rating_count?: number | null
           rejection_reason?: string | null

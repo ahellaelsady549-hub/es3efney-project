@@ -34,6 +34,9 @@ type PendingSignupData = {
   doctorCvFile: File | null;
   doctorCvUrl: string;
   doctorPortfolioUrl: string;
+  workplaceType: 'clinic' | 'hospital' | '';
+  workplaceName: string;
+  workplaceAddress: string;
   cvReview: string | null;
 };
 
@@ -61,6 +64,10 @@ const Auth = () => {
   const [doctorCvUrl, setDoctorCvUrl] = useState('');
   const [doctorCvFile, setDoctorCvFile] = useState<File | null>(null);
   const [doctorPortfolioUrl, setDoctorPortfolioUrl] = useState('');
+  const [workplaceType, setWorkplaceType] = useState<'clinic' | 'hospital' | ''>('');
+  const [workplaceName, setWorkplaceName] = useState('');
+  const [workplaceAddress, setWorkplaceAddress] = useState('');
+  const [signupProgress, setSignupProgress] = useState('');
   const [nationalId, setNationalId] = useState('');
   const [governorate, setGovernorate] = useState('');
   const [homeAddress, setHomeAddress] = useState('');
@@ -79,7 +86,27 @@ const Auth = () => {
   const [pendingVerifiedUserId, setPendingVerifiedUserId] = useState<string | null>(null);
   const [signupSubmitted, setSignupSubmitted] = useState(false);
 
-  const saveSignupApplications = async (userId: string, signup: PendingSignupData) => {
+  const prepareIdentityImage = async (file: File): Promise<File> => {
+    if (file.size <= 1024 * 1024 || !file.type.startsWith('image/')) return file;
+    try {
+      const bitmap = await createImageBitmap(file);
+      const maxSide = 2200;
+      const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(bitmap.width * scale);
+      canvas.height = Math.round(bitmap.height * scale);
+      const context = canvas.getContext('2d');
+      if (!context) return file;
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+      bitmap.close();
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88));
+      return blob ? new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg', lastModified: Date.now() }) : file;
+    } catch {
+      return file;
+    }
+  };
+
+  const saveSignupApplications = async (userId: string, signup: PendingSignupData, onProgress?: (message: string) => void) => {
     const uploaded: Array<{ bucket: string; path: string }> = [];
     const token = crypto.randomUUID();
 
@@ -92,16 +119,27 @@ const Auth = () => {
 
       const frontPath = `${userId}/front-${token}`;
       const backPath = `${userId}/back-${token}`;
-      await upload('identity-documents', frontPath, signup.identityFront);
-      await upload('identity-documents', backPath, signup.identityBack);
+      onProgress?.(L('تجهيز صور البطاقة ورفع الملفات بالتوازي...', 'Preparing ID images and uploading documents in parallel...'));
+      const [frontImage, backImage] = await Promise.all([
+        prepareIdentityImage(signup.identityFront),
+        prepareIdentityImage(signup.identityBack),
+      ]);
+      const uploadJobs: Promise<void>[] = [
+        upload('identity-documents', frontPath, frontImage, frontImage.type),
+        upload('identity-documents', backPath, backImage, backImage.type),
+      ];
 
       let cvPath: string | null = null;
       if (signup.userType === 'doctor') {
         if (!signup.doctorCvFile) throw new Error(L('ملف السيرة الذاتية مطلوب', 'The CV file is required'));
         cvPath = `${userId}/${Date.now()}-${signup.doctorCvFile.name.replace(/[^\w.-]/g, '_')}`;
-        await upload('doctor-cvs', cvPath, signup.doctorCvFile, 'application/pdf');
+        uploadJobs.push(upload('doctor-cvs', cvPath, signup.doctorCvFile, 'application/pdf'));
       }
+      const uploadResults = await Promise.allSettled(uploadJobs);
+      const failedUpload = uploadResults.find((result) => result.status === 'rejected');
+      if (failedUpload?.status === 'rejected') throw failedUpload.reason;
 
+      onProgress?.(L('تم رفع الملفات، جارٍ إرسال الطلب للمراجعة...', 'Documents uploaded. Sending the application for review...'));
       const { error: identityError } = await supabase.from('identity_applications').insert({
         user_id: userId,
         national_id: signup.nationalId,
@@ -120,8 +158,12 @@ const Auth = () => {
           specialty: signup.doctorSpecialty,
           bio: signup.doctorBio,
           cv_url: cvPath,
+          cv_link: signup.doctorCvUrl || null,
           portfolio_url: signup.doctorPortfolioUrl || null,
           ai_cv_review: signup.cvReview,
+          workplace_type: signup.workplaceType,
+          workplace_name: signup.workplaceName,
+          workplace_address: signup.workplaceAddress,
           is_verified: false,
           verification_status: 'pending',
         }, { onConflict: 'user_id' });
@@ -225,6 +267,13 @@ const Auth = () => {
       if (!/^\d{14}$/.test(nationalId)) {
         toast({ title: L('رقم قومي غير صالح', 'Invalid national ID'), description: L('أدخل 14 رقمًا مصريًا', 'Enter a 14-digit Egyptian national ID'), variant: 'destructive' }); return;
       }
+      const acceptedIdImageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+      if ((idFront && !acceptedIdImageTypes.includes(idFront.type)) || (idBack && !acceptedIdImageTypes.includes(idBack.type))) {
+        toast({ title: L('صيغة صورة غير مدعومة', 'Unsupported image type'), description: L('ارفع صور البطاقة بصيغة JPG أو PNG أو WebP', 'Upload ID images as JPG, PNG, or WebP'), variant: 'destructive' }); return;
+      }
+      if ((idFront?.size ?? 0) > 20 * 1024 * 1024 || (idBack?.size ?? 0) > 20 * 1024 * 1024) {
+        toast({ title: L('صورة البطاقة كبيرة', 'ID image is too large'), description: L('اختر صورة أقل من 20 ميجا لكل وجه', 'Choose an image under 20 MB for each side'), variant: 'destructive' }); return;
+      }
       if (!governorate.trim() || !homeAddress.trim() || !idFront || !idBack) {
         toast({ title: L('بيانات ناقصة', 'Missing information'), description: L('أكمل المحافظة والعنوان وارفع وجهي البطاقة', 'Enter governorate and address, and upload both ID sides'), variant: 'destructive' }); return;
       }
@@ -239,13 +288,15 @@ const Auth = () => {
       if (userType === 'doctor') {
         const msg = doctorBio.trim().length < 20
           ? L('النبذة عن الطبيب إلزامية (20 حرفًا على الأقل)', 'Doctor bio is required (at least 20 characters)')
-          : !doctorCvFile
-          ? L('رفع ملف السيرة الذاتية PDF إلزامي', 'Uploading a PDF CV is required')
-          : doctorCvFile.type !== 'application/pdf' || !doctorCvFile.name.toLowerCase().endsWith('.pdf')
-          ? L('السيرة الذاتية يجب أن تكون بصيغة PDF', 'The CV must be a PDF')
-          : doctorCvFile.size > 300 * 1024 * 1024
-          ? L('حجم الملف أكبر من 300 ميجا', 'File is larger than 300 MB')
-          : null;
+          : (!workplaceType || !workplaceName.trim() || !workplaceAddress.trim())
+            ? L('حدد العيادة أو المستشفى واكتب اسمها وعنوانها', 'Choose a clinic or hospital and enter its name and address')
+            : !doctorCvFile
+              ? L('رفع ملف السيرة الذاتية PDF إلزامي', 'Uploading a PDF CV is required')
+              : doctorCvFile.type !== 'application/pdf' || !doctorCvFile.name.toLowerCase().endsWith('.pdf')
+                ? L('السيرة الذاتية يجب أن تكون بصيغة PDF', 'The CV must be a PDF')
+                : doctorCvFile.size > 300 * 1024 * 1024
+                  ? L('حجم الملف أكبر من 300 ميجا', 'File is larger than 300 MB')
+                  : null;
         if (msg) {
           toast({ title: L('خطأ في البيانات','Invalid data'), description: msg, variant: 'destructive' });
           return;
@@ -263,6 +314,7 @@ const Auth = () => {
     }
 
     setIsLoading(true);
+    setSignupProgress(L('جاري إنشاء الحساب...', 'Creating your account...'));
     
     const { data, error } = await supabase.auth.signUp({
       email: signupEmail,
@@ -308,6 +360,9 @@ const Auth = () => {
       doctorCvFile,
       doctorCvUrl,
       doctorPortfolioUrl,
+      workplaceType,
+      workplaceName,
+      workplaceAddress,
       cvReview,
     };
 
@@ -317,6 +372,7 @@ const Auth = () => {
       setOtpValue('');
       setShowOtpInput(true);
       setIsLoading(false);
+      setSignupProgress('');
       toast({
         title: L('تحقق من بريدك الإلكتروني', 'Check your email'),
         description: L('أدخل رمز التحقق لنحفظ طلب التوثيق والملفات بأمان.', 'Enter the verification code so we can securely save your application and files.'),
@@ -325,7 +381,7 @@ const Auth = () => {
     }
 
     try {
-      await saveSignupApplications(data.user.id, signup);
+      await saveSignupApplications(data.user.id, signup, setSignupProgress);
     } catch (err) {
       console.error('Error saving signup application:', err);
       setIsLoading(false);
@@ -358,6 +414,7 @@ const Auth = () => {
       return;
     }
     setIsLoading(true);
+    setSignupProgress(L('جارٍ التحقق من الرمز...', 'Verifying code...'));
 
     let verifiedUserId = pendingVerifiedUserId;
     if (!verifiedUserId) {
@@ -388,7 +445,7 @@ const Auth = () => {
     }
 
     try {
-      await saveSignupApplications(verifiedUserId, pendingUserData);
+      await saveSignupApplications(verifiedUserId, pendingUserData, setSignupProgress);
     } catch (error) {
       console.error('Error saving verified signup application:', error);
       setIsLoading(false);
@@ -504,8 +561,9 @@ const Auth = () => {
                 className="w-full bg-gradient-medical hover:opacity-90"
                 disabled={isLoading || otpValue.length !== 6}
               >
-                {isLoading ? L('جاري التحقق...','Verifying...') : L('تأكيد الرمز','Confirm code')}
+                {isLoading ? signupProgress || L('جاري التحقق...','Verifying...') : L('تأكيد الرمز','Confirm code')}
               </Button>
+              {isLoading && signupProgress && <p className="text-center text-xs text-muted-foreground">{signupProgress}</p>}
 
               <div className="flex items-center justify-between text-sm">
                 <Button 
@@ -670,8 +728,8 @@ const Auth = () => {
                     <div><Label htmlFor="national-id">{L('الرقم القومي المصري (14 رقمًا)', 'Egyptian national ID (14 digits)')}</Label><Input id="national-id" inputMode="numeric" maxLength={14} value={nationalId} onChange={(e) => setNationalId(e.target.value.replace(/\D/g, '').slice(0,14))} required /></div>
                     <div><Label htmlFor="governorate">{L('المحافظة', 'Governorate')}</Label><Input id="governorate" value={governorate} onChange={(e) => setGovernorate(e.target.value)} required /></div>
                     <div className="sm:col-span-2"><Label htmlFor="home-address">{L('عنوان السكن', 'Home address')}</Label><Input id="home-address" value={homeAddress} onChange={(e) => setHomeAddress(e.target.value)} required /></div>
-                    <div><Label htmlFor="id-front">{L('صورة البطاقة - الوجه', 'ID card front')}</Label><Input id="id-front" type="file" accept="image/*" required onChange={(e) => setIdFront(e.target.files?.[0] ?? null)} /></div>
-                    <div><Label htmlFor="id-back">{L('صورة البطاقة - الظهر', 'ID card back')}</Label><Input id="id-back" type="file" accept="image/*" required onChange={(e) => setIdBack(e.target.files?.[0] ?? null)} /></div>
+                    <div><Label htmlFor="id-front">{L('صورة البطاقة - الوجه', 'ID card front')}</Label><Input id="id-front" type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setIdFront(e.target.files?.[0] ?? null)} /></div>
+                    <div><Label htmlFor="id-back">{L('صورة البطاقة - الظهر', 'ID card back')}</Label><Input id="id-back" type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setIdBack(e.target.files?.[0] ?? null)} /></div>
                   </div>
                   {userType === 'doctor' && (
                     <div className="space-y-4 pt-2 border-t">
@@ -691,6 +749,19 @@ const Auth = () => {
                             ))}
                           </SelectContent>
                         </Select>
+                      </div>
+
+                      <div className="space-y-3 rounded-lg border p-3">
+                        <p className="text-sm font-medium">{L('جهة العمل الحالية', 'Current workplace')}</p>
+                        <Select value={workplaceType} onValueChange={(value: 'clinic' | 'hospital') => setWorkplaceType(value)}>
+                          <SelectTrigger><SelectValue placeholder={L('اختر عيادة أو مستشفى', 'Choose clinic or hospital')} /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="clinic">{L('عيادة', 'Clinic')}</SelectItem>
+                            <SelectItem value="hospital">{L('مستشفى', 'Hospital')}</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input value={workplaceName} onChange={(event) => setWorkplaceName(event.target.value)} placeholder={L('اسم العيادة أو المستشفى', 'Clinic or hospital name')} required />
+                        <Input value={workplaceAddress} onChange={(event) => setWorkplaceAddress(event.target.value)} placeholder={L('عنوان جهة العمل', 'Workplace address')} required />
                       </div>
 
                       <div className="space-y-2">
@@ -732,8 +803,9 @@ const Auth = () => {
                     className="w-full bg-gradient-medical hover:opacity-90"
                     disabled={isLoading}
                   >
-                    {isLoading ? L('جاري إنشاء الحساب...','Creating account...') : L('إنشاء حساب','Create account')}
+                    {isLoading ? signupProgress || L('جاري إنشاء الحساب...','Creating account...') : L('إنشاء حساب','Create account')}
                   </Button>
+                  {isLoading && signupProgress && <p className="text-center text-xs text-muted-foreground">{signupProgress}</p>}
                 </form>
               </TabsContent>
             </Tabs>
