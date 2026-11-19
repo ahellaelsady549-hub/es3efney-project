@@ -19,8 +19,6 @@ import {
   Video,
   Mic,
   MicOff,
-  Play,
-  Pause,
   AlertTriangle,
   Shield
 } from 'lucide-react';
@@ -64,67 +62,28 @@ const formatAudioTime = (seconds: number) => {
 
 const VoiceMessagePlayer = ({ src, isOwn, L, onError }: { src: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-
-  const togglePlayback = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      try {
-        await audio.play();
-        setPlaying(true);
-      } catch {
-        setPlaying(false);
-      }
-    } else {
-      audio.pause();
-      setPlaying(false);
-    }
-  };
-
-  const seek = (value: string) => {
-    const nextTime = Number(value);
-    if (!Number.isFinite(nextTime) || !audioRef.current) return;
-    audioRef.current.currentTime = nextTime;
-    setCurrentTime(nextTime);
-  };
+  const [playbackError, setPlaybackError] = useState(false);
 
   return (
-    <div className={`flex min-w-56 items-center gap-2 rounded-xl p-2 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
+    <div className={`min-w-56 rounded-xl p-2 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
       <audio
         ref={audioRef}
         src={src}
+        controls
         preload="metadata"
         onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onEnded={() => { setPlaying(false); setCurrentTime(0); if (audioRef.current) audioRef.current.currentTime = 0; }}
-        onPause={() => setPlaying(false)}
-        onError={onError}
-        className="hidden"
+        onError={() => { setPlaybackError(true); onError(); }}
+        className="h-10 w-full"
       />
-      <Button type="button" size="icon" variant="ghost" onClick={() => void togglePlayback()} aria-label={playing ? L('إيقاف مؤقت', 'Pause') : L('تشغيل الرسالة الصوتية', 'Play voice message')} className="shrink-0 rounded-full">
-        {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
-      </Button>
-      <div className="min-w-0 flex-1">
-        <input
-          type="range"
-          min={0}
-          max={Math.max(duration, 0.1)}
-          step={0.1}
-          value={Math.min(currentTime, duration || 0)}
-          onChange={(event) => seek(event.target.value)}
-          disabled={!duration}
-          aria-label={L('موضع تشغيل الرسالة الصوتية', 'Voice message position')}
-          className="w-full cursor-pointer accent-current disabled:cursor-wait"
-        />
-        <div className="flex justify-between text-[11px] tabular-nums opacity-75">
-          <span>{formatAudioTime(currentTime)}</span>
-          <span>{duration ? formatAudioTime(duration) : L('تحميل...', 'Loading...')}</span>
-        </div>
+      <div className="mt-1 flex justify-between text-[11px] tabular-nums opacity-75">
+        <span>{formatAudioTime(currentTime)}</span>
+        <span>{duration ? formatAudioTime(duration) : L('تحميل المدة...', 'Loading duration...')}</span>
       </div>
+      {playbackError && <p className="mt-1 text-xs text-destructive">{L('تعذر تشغيل التسجيل. جرّب إعادة تحميل المرفق.', 'Could not play this recording. Try reloading the attachment.')}</p>}
     </div>
   );
 };
@@ -258,8 +217,11 @@ const Chat = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      const preferredMimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
-        .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+      const audioElement = document.createElement('audio');
+      const supportedMimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+        .filter((mimeType) => MediaRecorder.isTypeSupported(mimeType));
+      const preferredMimeType = supportedMimeTypes.find((mimeType) => audioElement.canPlayType(mimeType.split(';')[0]) !== '')
+        || supportedMimeTypes[0];
       const recorder = preferredMimeType
         ? new MediaRecorder(stream, { mimeType: preferredMimeType })
         : new MediaRecorder(stream);
@@ -280,7 +242,7 @@ const Chat = () => {
         setRecordingSeconds(0);
         if (blob.size > 0) void sendFile(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }));
       };
-      recorder.start();
+      recorder.start(250);
       recordingStartedAtRef.current = Date.now();
       setRecordingSeconds(0);
       setIsRecording(true);
