@@ -36,8 +36,8 @@ export const DailyTip = () => {
       L('نصيحة اليوم الصحية 💊', 'Daily Health Tip 💊'),
       {
         body: language === 'ar' ? tip.ar : tip.en,
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
+        icon: '/favicon.png',
+        badge: '/favicon.png',
         tag: 'daily-health-tip',
         requireInteraction: false
       }

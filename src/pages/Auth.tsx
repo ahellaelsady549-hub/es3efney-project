@@ -22,6 +22,21 @@ const emailSchema = z.string().email('البريد الإلكتروني غير �
 const passwordSchema = z.string().min(6, 'كلمة المرور 6 أحرف على الأقل / Password must be at least 6 characters');
 const nameSchema = z.string().min(2, 'الاسم حرفين على الأقل / Name must be at least 2 characters');
 
+type PendingSignupData = {
+  userType: 'user' | 'doctor';
+  nationalId: string;
+  governorate: string;
+  homeAddress: string;
+  identityFront: File;
+  identityBack: File;
+  doctorSpecialty: string;
+  doctorBio: string;
+  doctorCvFile: File | null;
+  doctorCvUrl: string;
+  doctorPortfolioUrl: string;
+  cvReview: string | null;
+};
+
 const Auth = () => {
   const { user, signIn, loading } = useAuth();
   const { L } = useLanguage();
@@ -60,14 +75,69 @@ const Auth = () => {
   const [showOtpInput, setShowOtpInput] = useState(false);
   const [otpValue, setOtpValue] = useState('');
   const [pendingEmail, setPendingEmail] = useState('');
-  const [pendingUserData, setPendingUserData] = useState<any>(null);
+  const [pendingUserData, setPendingUserData] = useState<PendingSignupData | null>(null);
+  const [pendingVerifiedUserId, setPendingVerifiedUserId] = useState<string | null>(null);
+
+  const saveSignupApplications = async (userId: string, signup: PendingSignupData) => {
+    const uploaded: Array<{ bucket: string; path: string }> = [];
+    const token = crypto.randomUUID();
+
+    try {
+      const upload = async (bucket: string, path: string, file: File, contentType?: string) => {
+        const { error } = await supabase.storage.from(bucket).upload(path, file, contentType ? { contentType } : {});
+        if (error) throw error;
+        uploaded.push({ bucket, path });
+      };
+
+      const frontPath = `${userId}/front-${token}`;
+      const backPath = `${userId}/back-${token}`;
+      await upload('identity-documents', frontPath, signup.identityFront);
+      await upload('identity-documents', backPath, signup.identityBack);
+
+      let cvPath: string | null = null;
+      if (signup.userType === 'doctor') {
+        if (!signup.doctorCvFile) throw new Error(L('ملف السيرة الذاتية مطلوب', 'The CV file is required'));
+        cvPath = `${userId}/${Date.now()}-${signup.doctorCvFile.name.replace(/[^\w.-]/g, '_')}`;
+        await upload('doctor-cvs', cvPath, signup.doctorCvFile, 'application/pdf');
+      }
+
+      const { error: identityError } = await supabase.from('identity_applications').insert({
+        user_id: userId,
+        national_id: signup.nationalId,
+        governorate: signup.governorate,
+        home_address: signup.homeAddress,
+        id_front_path: frontPath,
+        id_back_path: backPath,
+        account_type: signup.userType,
+        status: 'pending',
+      });
+      if (identityError) throw identityError;
+
+      if (signup.userType === 'doctor') {
+        const { error: doctorError } = await supabase.from('doctors').upsert({
+          user_id: userId,
+          specialty: signup.doctorSpecialty,
+          bio: signup.doctorBio,
+          cv_url: cvPath,
+          portfolio_url: signup.doctorPortfolioUrl || null,
+          ai_cv_review: signup.cvReview,
+          is_verified: false,
+          verification_status: 'pending',
+        }, { onConflict: 'user_id' });
+        if (doctorError) throw doctorError;
+      }
+    } catch (error) {
+      await Promise.all(uploaded.map(({ bucket, path }) => supabase.storage.from(bucket).remove([path])));
+      throw error;
+    }
+  };
   
 
   useEffect(() => {
-    if (user) {
+    if (user && !isLoading && !showOtpInput && !pendingVerifiedUserId) {
       navigate('/');
     }
-  }, [user, navigate]);
+  }, [user, navigate, isLoading, showOtpInput, pendingVerifiedUserId]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -219,52 +289,59 @@ const Auth = () => {
       return;
     }
 
-    if (data.user) {
-      try {
-        const uploadIdentity = async (file: File, side: string) => {
-          const path = `${data.user!.id}/${side}-${crypto.randomUUID()}`;
-          const { error: uploadError } = await supabase.storage.from('identity-documents').upload(path, file);
-          if (uploadError) throw uploadError;
-          return path;
-        };
-        const [frontPath, backPath] = await Promise.all([uploadIdentity(idFront!, 'front'), uploadIdentity(idBack!, 'back')]);
-        const { error: identityError } = await supabase.from('identity_applications').insert({ user_id: data.user.id, national_id: nationalId, governorate, home_address: homeAddress, id_front_path: frontPath, id_back_path: backPath, account_type: userType, status: 'pending' });
-        if (identityError) throw identityError;
-        await supabase.from('user_roles').insert({
-          user_id: data.user.id,
-          role: userType
-        });
+    if (!data.user) {
+      setIsLoading(false);
+      toast({ title: L('تعذر إنشاء الحساب', 'Could not create account'), description: L('لم يصل تأكيد إنشاء الحساب من الخادم', 'The server did not confirm account creation'), variant: 'destructive' });
+      return;
+    }
 
-        if (userType === 'doctor') {
-          let cvValue = doctorCvUrl;
-          if (doctorCvFile && data.session) {
-            const path = `${data.user.id}/${Date.now()}-${doctorCvFile.name.replace(/[^\w.-]/g, '_')}`;
-            const { error: upErr } = await supabase.storage.from('doctor-cvs').upload(path, doctorCvFile, { contentType: 'application/pdf' });
-            if (upErr) throw upErr;
-            cvValue = path;
-          }
-          await supabase.from('doctors').insert({
-            user_id: data.user.id,
-            specialty: doctorSpecialty,
-            bio: doctorBio,
-            cv_url: cvValue,
-            portfolio_url: doctorPortfolioUrl,
-            ai_cv_review: cvReview,
-            is_verified: false,
-            verification_status: 'pending'
-          });
-        }
-      } catch (err) {
-        console.error('Error creating user data:', err);
-      }
+    const signup: PendingSignupData = {
+      userType,
+      nationalId,
+      governorate,
+      homeAddress,
+      identityFront: idFront!,
+      identityBack: idBack!,
+      doctorSpecialty,
+      doctorBio,
+      doctorCvFile,
+      doctorCvUrl,
+      doctorPortfolioUrl,
+      cvReview,
+    };
+
+    if (!data.session) {
+      setPendingEmail(signupEmail);
+      setPendingUserData(signup);
+      setOtpValue('');
+      setShowOtpInput(true);
+      setIsLoading(false);
+      toast({
+        title: L('تحقق من بريدك الإلكتروني', 'Check your email'),
+        description: L('أدخل رمز التحقق لنحفظ طلب التوثيق والملفات بأمان.', 'Enter the verification code so we can securely save your application and files.'),
+      });
+      return;
+    }
+
+    try {
+      await saveSignupApplications(data.user.id, signup);
+    } catch (err) {
+      console.error('Error saving signup application:', err);
+      setIsLoading(false);
+      toast({
+        title: L('تعذر حفظ طلب التوثيق', 'Could not save verification request'),
+        description: err instanceof Error ? err.message : L('راجع إعدادات قاعدة البيانات والتخزين ثم حاول مجددًا.', 'Check database and storage setup, then try again.'),
+        variant: 'destructive',
+      });
+      return;
     }
 
     setIsLoading(false);
     toast({
       title: L('تم التسجيل بنجاح','Registered successfully'),
       description: userType === 'doctor'
-        ? L('مرحباً بك! سيتم مراجعة حسابك من قبل الإدارة','Welcome! Your account will be reviewed by our team')
-        : L('مرحباً بك في إسعفني!','Welcome to Es3efny!')
+        ? L('تم إرسال طلب الطبيب للإدارة للمراجعة','Your doctor application has been sent to the administrators for review')
+        : L('تم إرسال بيانات الهوية للمراجعة','Your identity details have been sent for review')
     });
     navigate('/');
   };
@@ -278,76 +355,58 @@ const Auth = () => {
       });
       return;
     }
-
-    if (pendingUserData?.identityFront && pendingUserData?.identityBack) {
-      try {
-        const uid = pendingUserData.userId;
-        const frontPath = `${uid}/front-${crypto.randomUUID()}`;
-        const backPath = `${uid}/back-${crypto.randomUUID()}`;
-        const [front, back] = await Promise.all([
-          supabase.storage.from('identity-documents').upload(frontPath, pendingUserData.identityFront),
-          supabase.storage.from('identity-documents').upload(backPath, pendingUserData.identityBack),
-        ]);
-        if (front.error) throw front.error;
-        if (back.error) throw back.error;
-        const { error } = await supabase.from('identity_applications').insert({ user_id: uid, national_id: pendingUserData.nationalId, governorate: pendingUserData.governorate, home_address: pendingUserData.homeAddress, id_front_path: frontPath, id_back_path: backPath, account_type: pendingUserData.userType, status: 'pending' });
-        if (error) throw error;
-      } catch (error) {
-        toast({ title: L('تعذر حفظ بيانات الهوية', 'Could not save identity documents'), description: error instanceof Error ? error.message : '', variant: 'destructive' }); return;
-      }
-    }
     setIsLoading(true);
-    
-    const { data, error } = await supabase.auth.verifyOtp({
-      email: pendingEmail,
-      token: otpValue,
-      type: 'signup'
-    });
-    
-    if (error) {
-      setIsLoading(false);
-      toast({
-        title: L('خطأ في التحقق','Verification error'),
-        description: L('رمز التحقق غير صحيح أو منتهي الصلاحية','The verification code is invalid or expired'),
-        variant: 'destructive'
+
+    let verifiedUserId = pendingVerifiedUserId;
+    if (!verifiedUserId) {
+      const { data, error } = await supabase.auth.verifyOtp({
+        email: pendingEmail,
+        token: otpValue,
+        type: 'signup',
       });
+
+      if (error || !data.user) {
+        setIsLoading(false);
+        toast({
+          title: L('خطأ في التحقق','Verification error'),
+          description: error?.message || L('تعذر تأكيد الحساب', 'Could not verify the account'),
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      verifiedUserId = data.user.id;
+      setPendingVerifiedUserId(verifiedUserId);
+    }
+
+    if (!pendingUserData) {
+      setIsLoading(false);
+      toast({ title: L('تعذر استكمال التسجيل', 'Could not finish signup'), description: L('بيانات التسجيل غير متاحة. سجل الدخول ثم أعد إرسال الطلب.', 'Signup details are no longer available. Sign in and resubmit the application.'), variant: 'destructive' });
       return;
     }
 
-    // After successful verification, create role and doctor profile if needed
-    if (data.user && pendingUserData) {
-      try {
-        // Insert user role
-        await supabase.from('user_roles').insert({
-          user_id: data.user.id,
-          role: pendingUserData.userType
-        });
-
-        // If doctor, create doctor profile
-        if (pendingUserData.userType === 'doctor') {
-          await supabase.from('doctors').insert({
-            user_id: data.user.id,
-            specialty: pendingUserData.doctorSpecialty,
-            bio: pendingUserData.doctorBio,
-            cv_url: pendingUserData.doctorCvUrl,
-            portfolio_url: pendingUserData.doctorPortfolioUrl,
-            ai_cv_review: pendingUserData.cvReview,
-            is_verified: false,
-            verification_status: 'pending'
-          });
-        }
-      } catch (err) {
-        console.error('Error creating user data:', err);
-      }
+    try {
+      await saveSignupApplications(verifiedUserId, pendingUserData);
+    } catch (error) {
+      console.error('Error saving verified signup application:', error);
+      setIsLoading(false);
+      toast({
+        title: L('تم تأكيد البريد لكن تعذر حفظ الطلب', 'Email verified, but the application could not be saved'),
+        description: error instanceof Error ? error.message : L('صحّح إعدادات التخزين أو قاعدة البيانات ثم اضغط تأكيد الرمز مجددًا.', 'Fix storage or database setup, then press Confirm code again.'),
+        variant: 'destructive',
+      });
+      return;
     }
 
     setIsLoading(false);
     toast({
       title: L('تم التحقق بنجاح','Verified successfully'),
       description: pendingUserData?.userType === 'doctor' 
-        ? L('مرحباً بك! سيتم مراجعة حسابك من قبل الإدارة','Welcome! Your account will be reviewed by our team')
-        : L('مرحباً بك في إسعفني!','Welcome to Es3efny!')
+        ? L('تم إرسال طلب الطبيب للإدارة للمراجعة','Your doctor application has been sent to the administrators for review')
+        : L('تم إرسال بيانات الهوية للمراجعة','Your identity details have been sent for review')
     });
+    setPendingVerifiedUserId(null);
+    setPendingUserData(null);
     setShowOtpInput(false);
     navigate('/');
   };
@@ -456,7 +515,11 @@ const Auth = () => {
                 </Button>
                 <Button 
                   variant="link" 
-                  onClick={() => setShowOtpInput(false)}
+                  onClick={() => {
+                    setShowOtpInput(false);
+                    setPendingUserData(null);
+                    setPendingVerifiedUserId(null);
+                  }}
                   className="p-0"
                 >
                   {L('تغيير البريد','Change email')}

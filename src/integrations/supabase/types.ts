@@ -361,6 +361,8 @@ export type Database = {
           portfolio_url: string | null
           rating: number | null
           rating_count: number | null
+          rejection_reason: string | null
+          reviewed_at: string | null
           specialty: string
           updated_at: string
           user_id: string
@@ -376,6 +378,8 @@ export type Database = {
           portfolio_url?: string | null
           rating?: number | null
           rating_count?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
           specialty: string
           updated_at?: string
           user_id: string
@@ -391,6 +395,8 @@ export type Database = {
           portfolio_url?: string | null
           rating?: number | null
           rating_count?: number | null
+          rejection_reason?: string | null
+          reviewed_at?: string | null
           specialty?: string
           updated_at?: string
           user_id?: string
@@ -1120,6 +1126,24 @@ export type Database = {
           is_verified: boolean | null
           specialty: string
           user_id: string
+          verification_status: string | null
+        }[]
+      }
+      get_doctor_requests: {
+        Args: never
+        Returns: {
+          ai_cv_review: string | null
+          bio: string | null
+          created_at: string
+          cv_url: string | null
+          email: string | null
+          full_name: string | null
+          id: string
+          is_verified: boolean | null
+          portfolio_url: string | null
+          rejection_reason: string | null
+          reviewed_at: string | null
+          specialty: string
           verification_status: string | null
         }[]
       }

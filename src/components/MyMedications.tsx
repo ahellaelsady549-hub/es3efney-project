@@ -73,7 +73,7 @@ export const MyMedications = () => {
           if ('Notification' in window && Notification.permission === 'granted') {
             new Notification(L('تذكير بالدواء 💊', 'Medication reminder 💊'), {
               body: L(`حان موعد تناول ${med.name} - ${med.dosage}`, `It's time to take ${med.name} - ${med.dosage}`),
-              icon: '/favicon.ico'
+              icon: '/favicon.png'
             });
           }
           

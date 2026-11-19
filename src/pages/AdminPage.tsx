@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,24 +26,62 @@ const AdminPage = () => {
   const [docs, setDocs] = useState<Doc[]>([]);
   const [reasons, setReasons] = useState<Record<string, string>>({});
 
-  const load = async () => {
-    const { data } = await supabase.rpc('get_doctor_requests');
+  const load = useCallback(async () => {
+    const { data, error } = await supabase.rpc('get_doctor_requests');
+    if (error) {
+      console.error('Could not load doctor verification requests:', error);
+      const missingRpc = error.code === 'PGRST202' || /get_doctor_requests/i.test(error.message);
+      toast.error(missingRpc
+        ? L('قاعدة البيانات تحتاج ترحيل طلبات توثيق الطبيب: شغّل ملف 20261119120000_doctor_verification_admin_queue.sql كاملًا.', 'Doctor verification setup is missing. Run the full 20261119120000_doctor_verification_admin_queue.sql migration.')
+        : error.message);
+      return false;
+    }
     setDocs((data ?? []) as Doc[]);
-  };
+    return true;
+  }, [L]);
 
   useEffect(() => {
     if (!user) return;
-    supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' }).then(({ data }) => {
-      setIsAdmin(Boolean(data));
-      if (data) load();
-    });
-  }, [user]);
+    let active = true;
+    let refreshTimer: number | undefined;
+
+    const checkAdminAndLoad = async () => {
+      const { data, error } = await supabase.rpc('has_role', { _user_id: user.id, _role: 'admin' });
+      if (!active) return;
+      if (error) {
+        console.error('Could not verify administrator role:', error);
+        setIsAdmin(false);
+        return;
+      }
+
+      const admin = Boolean(data);
+      setIsAdmin(admin);
+      if (admin) {
+        const loaded = await load();
+        if (active && loaded) refreshTimer = window.setInterval(() => void load(), 20000);
+      }
+    };
+
+    void checkAdminAndLoad();
+    return () => {
+      active = false;
+      if (refreshTimer) window.clearInterval(refreshTimer);
+    };
+  }, [user, load]);
 
   const openCv = async (cv: string) => {
-    if (cv.startsWith('storage:')) {
-      const { data } = await supabase.storage.from('doctor-cvs').createSignedUrl(cv.slice(8), 600);
-      if (data) window.open(data.signedUrl, '_blank');
-    } else window.open(cv, '_blank');
+    if (/^https?:\/\//i.test(cv)) {
+      window.open(cv, '_blank', 'noopener,noreferrer');
+      return;
+    }
+
+    const path = cv.startsWith('storage:') ? cv.slice(8) : cv;
+    const { data, error } = await supabase.storage.from('doctor-cvs').createSignedUrl(path, 600);
+    if (error || !data) {
+      toast.error(error?.message || L('تعذر فتح السيرة الذاتية', 'Could not open the CV'));
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
   const decide = async (id: string, approve: boolean) => {

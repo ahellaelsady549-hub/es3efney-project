@@ -9,8 +9,8 @@ self.addEventListener('push', (event) => {
   const title = payload.title || 'إسعفني';
   const options = {
     body: payload.body || '',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
+    icon: '/favicon.png',
+    badge: '/favicon.png',
     tag: payload.tag,
     data: { url: payload.url || '/' },
   };

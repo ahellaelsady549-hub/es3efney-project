@@ -99,7 +99,7 @@ export const scheduleMedicationReminder = async (
       if ('Notification' in window && Notification.permission === 'granted') {
         new Notification('تذكير بالدواء 💊', {
           body: `حان موعد تناول ${medicationName}`,
-          icon: '/favicon.ico',
+          icon: '/favicon.png',
           tag: `medication-${id}`
         });
       }
@@ -250,7 +250,7 @@ export const showReminderNotification = async (title: string, body: string, tag:
     if (registration) {
       await registration.showNotification(title, {
         body,
-        icon: '/favicon.ico',
+          icon: '/favicon.png',
         tag,
         data: { url: window.location.origin },
       });
@@ -258,5 +258,5 @@ export const showReminderNotification = async (title: string, body: string, tag:
     }
   }
 
-  new Notification(title, { body, icon: '/favicon.ico', tag });
+  new Notification(title, { body, icon: '/favicon.png', tag });
 };
