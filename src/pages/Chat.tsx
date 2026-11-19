@@ -19,6 +19,8 @@ import {
   Video,
   Mic,
   MicOff,
+  Play,
+  Pause,
   AlertTriangle,
   Shield
 } from 'lucide-react';
@@ -54,6 +56,79 @@ const getReadableError = (error: unknown) => {
   return 'Unknown error';
 };
 
+const formatAudioTime = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const wholeSeconds = Math.floor(seconds);
+  return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`;
+};
+
+const VoiceMessagePlayer = ({ src, isOwn, L, onError }: { src: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try {
+        await audio.play();
+        setPlaying(true);
+      } catch {
+        setPlaying(false);
+      }
+    } else {
+      audio.pause();
+      setPlaying(false);
+    }
+  };
+
+  const seek = (value: string) => {
+    const nextTime = Number(value);
+    if (!Number.isFinite(nextTime) || !audioRef.current) return;
+    audioRef.current.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
+  return (
+    <div className={`flex min-w-56 items-center gap-2 rounded-xl p-2 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
+      <audio
+        ref={audioRef}
+        src={src}
+        preload="metadata"
+        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+        onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onEnded={() => { setPlaying(false); setCurrentTime(0); if (audioRef.current) audioRef.current.currentTime = 0; }}
+        onPause={() => setPlaying(false)}
+        onError={onError}
+        className="hidden"
+      />
+      <Button type="button" size="icon" variant="ghost" onClick={() => void togglePlayback()} aria-label={playing ? L('إيقاف مؤقت', 'Pause') : L('تشغيل الرسالة الصوتية', 'Play voice message')} className="shrink-0 rounded-full">
+        {playing ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
+      </Button>
+      <div className="min-w-0 flex-1">
+        <input
+          type="range"
+          min={0}
+          max={Math.max(duration, 0.1)}
+          step={0.1}
+          value={Math.min(currentTime, duration || 0)}
+          onChange={(event) => seek(event.target.value)}
+          disabled={!duration}
+          aria-label={L('موضع تشغيل الرسالة الصوتية', 'Voice message position')}
+          className="w-full cursor-pointer accent-current disabled:cursor-wait"
+        />
+        <div className="flex justify-between text-[11px] tabular-nums opacity-75">
+          <span>{formatAudioTime(currentTime)}</span>
+          <span>{duration ? formatAudioTime(duration) : L('تحميل...', 'Loading...')}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const Chat = () => {
   const { id: conversationId } = useParams();
   const navigate = useNavigate();
@@ -71,17 +146,31 @@ const Chat = () => {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recordingStartedAtRef = useRef<number | null>(null);
   const [conv, setConv] = useState<{ doctor_id: string; user_id: string } | null>(null);
   const [isDoctorSide, setIsDoctorSide] = useState(false);
   const [sessions, setSessions] = useState<BookingRow[]>([]);
   const [pendingSession, setPendingSession] = useState<BookingRow | null>(null);
   const [banned, setBanned] = useState(false);
   const [signed, setSigned] = useState<Record<string, string>>({});
+  const [signedErrors, setSignedErrors] = useState<Record<string, boolean>>({});
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [tick, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
+  useEffect(() => {
+    if (!isRecording) return;
+    const updateDuration = () => {
+      if (recordingStartedAtRef.current !== null) {
+        setRecordingSeconds(Math.floor((Date.now() - recordingStartedAtRef.current) / 1000));
+      }
+    };
+    updateDuration();
+    const timer = window.setInterval(updateDuration, 250);
+    return () => window.clearInterval(timer);
+  }, [isRecording]);
 
   const loadSessions = async (c: { doctor_id: string; user_id: string }) => {
     const [{ data }, { data: ban }] = await Promise.all([
@@ -98,13 +187,37 @@ const Chat = () => {
   void tick;
 
   useEffect(() => {
-    messages.forEach(async (m) => {
-      if (m.file_url?.startsWith('storage:') && !signed[m.id]) {
-        const { data } = await supabase.storage.from('chat-files').createSignedUrl(m.file_url.slice(8), 3600);
-        if (data) setSigned((p) => ({ ...p, [m.id]: data.signedUrl }));
+    let active = true;
+    messages.forEach(async (message) => {
+      if (!message.file_url?.startsWith('storage:') || signed[message.id] || signedErrors[message.id]) return;
+      const { data, error } = await supabase.storage.from('chat-files').createSignedUrl(message.file_url.slice(8), 3600);
+      if (!active) return;
+      if (error || !data?.signedUrl) {
+        setSignedErrors((current) => ({ ...current, [message.id]: true }));
+        console.error('Could not create signed URL for chat attachment:', error);
+        return;
       }
+      setSigned((current) => ({ ...current, [message.id]: data.signedUrl }));
     });
-  }, [messages]);
+    return () => { active = false; };
+  }, [messages, signed, signedErrors]);
+
+  const retrySignedFile = async (message: Message) => {
+    if (!message.file_url?.startsWith('storage:')) return;
+    setSignedErrors((current) => ({ ...current, [message.id]: false }));
+    setSigned((current) => {
+      const next = { ...current };
+      delete next[message.id];
+      return next;
+    });
+    const { data, error } = await supabase.storage.from('chat-files').createSignedUrl(message.file_url.slice(8), 3600);
+    if (error || !data?.signedUrl) {
+      setSignedErrors((current) => ({ ...current, [message.id]: true }));
+      toast({ title: L('تعذر تحميل المرفق', 'Could not load attachment'), description: error?.message, variant: 'destructive' });
+      return;
+    }
+    setSigned((current) => ({ ...current, [message.id]: data.signedUrl }));
+  };
 
   const sendFile = async (f: File) => {
     if (!user || !conversationId || !openSession || banned) { toast({ title: L('الجلسة غير متاحة', 'Session unavailable'), variant: 'destructive' }); return; }
@@ -145,7 +258,7 @@ const Chat = () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
-      const preferredMimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
+      const preferredMimeType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
         .find((mimeType) => MediaRecorder.isTypeSupported(mimeType));
       const recorder = preferredMimeType
         ? new MediaRecorder(stream, { mimeType: preferredMimeType })
@@ -157,15 +270,19 @@ const Chat = () => {
       };
       recorder.onstop = () => {
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        const extension = blob.type.includes('ogg') ? 'ogg' : 'webm';
+        const extension = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
         audioChunksRef.current = [];
+        recordingStartedAtRef.current = null;
         setIsRecording(false);
+        setRecordingSeconds(0);
         if (blob.size > 0) void sendFile(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }));
       };
       recorder.start();
+      recordingStartedAtRef.current = Date.now();
+      setRecordingSeconds(0);
       setIsRecording(true);
     } catch (error) {
       mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
@@ -207,6 +324,34 @@ const Chat = () => {
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
+
+  useEffect(() => {
+    if (!user || !conversationId) return;
+    const markConversationNotificationsRead = async () => {
+      const { error } = await supabase
+        .from('chat_notifications')
+        .update({ is_read: true })
+        .eq('recipient_user_id', user.id)
+        .eq('conversation_id', conversationId)
+        .eq('is_read', false);
+      if (error) console.error('Could not mark chat notifications as read:', error);
+    };
+
+    void markConversationNotificationsRead();
+    const channel = supabase
+      .channel(`active-chat-notifications-${conversationId}-${user.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_notifications',
+        filter: `recipient_user_id=eq.${user.id}`,
+      }, (payload) => {
+        const notification = payload.new as { conversation_id?: string };
+        if (notification.conversation_id === conversationId) void markConversationNotificationsRead();
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [user, conversationId]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -416,6 +561,9 @@ const Chat = () => {
         <div className="max-w-2xl mx-auto space-y-4">
           {messages.map((message) => {
             const isOwn = message.sender_id === user?.id;
+            const storagePath = message.file_url?.startsWith('storage:') ? message.file_url.slice(8) : null;
+            const fileUrl = storagePath ? signed[message.id] : message.file_url || undefined;
+            const fileError = signedErrors[message.id];
             return (
               <div
                 key={message.id}
@@ -436,37 +584,41 @@ const Chat = () => {
                   )}
                   {message.content && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
                   {message.file_url && (
-                    <div className="mt-2">
-                      {message.file_type?.startsWith('image/') ? (
-                        <img
-                          src={message.file_url.startsWith('storage:') ? signed[message.id] : message.file_url}
-                          alt={L('مرفق', 'Attachment')}
-                          className="max-w-full rounded-lg"
-                        />
+                    <div className="mt-2 min-w-0">
+                      {!fileUrl ? (
+                        <button type="button" onClick={() => void retrySignedFile(message)} className="text-xs underline opacity-80">
+                          {fileError ? L('تعذر تحميل المرفق — حاول مرة أخرى', 'Attachment failed — retry') : L('جاري تحميل المرفق...', 'Loading attachment...')}
+                        </button>
+                      ) : message.file_type?.startsWith('image/') ? (
+                        <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
+                          <img
+                            src={fileUrl}
+                            alt={L('صورة مرفقة في المحادثة', 'Image attached to chat')}
+                            onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))}
+                            className="max-h-80 max-w-[min(70vw,360px)] rounded-xl object-contain"
+                          />
+                        </a>
                       ) : message.file_type?.startsWith('video/') ? (
                         <video
                           controls
                           preload="metadata"
-                          src={message.file_url.startsWith('storage:') ? signed[message.id] : message.file_url}
+                          src={fileUrl}
+                          onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))}
                           className="max-h-96 w-full rounded-lg bg-black"
                         />
                       ) : message.file_type?.startsWith('audio/') ? (
-                        <audio
-                          controls
-                          preload="metadata"
-                          src={message.file_url.startsWith('storage:') ? signed[message.id] : message.file_url}
-                          className="w-full"
-                        />
+                        <VoiceMessagePlayer key={fileUrl} src={fileUrl} isOwn={isOwn} L={L} onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))} />
                       ) : (
-                        <a 
-                          href={message.file_url.startsWith('storage:') ? signed[message.id] : message.file_url} 
-                          target="_blank" 
+                        <a
+                          href={fileUrl}
+                          target="_blank"
                           rel="noopener noreferrer"
                           className="text-sm underline"
                         >
                           {L('تحميل المرفق', 'Download attachment')}
                         </a>
                       )}
+                      {fileError && fileUrl && <button type="button" onClick={() => void retrySignedFile(message)} className="mt-1 block text-xs underline">{L('إعادة تحميل', 'Reload')}</button>}
                     </div>
                   )}
                   <span className={`text-xs ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'} mt-1 block`}>
@@ -496,6 +648,13 @@ const Chat = () => {
           </div>
         ) : (
         <div className="max-w-2xl mx-auto flex flex-wrap items-center gap-2">
+          {(isRecording || uploading) && (
+            <div className="w-full text-center text-xs text-muted-foreground" role="status">
+              {isRecording
+                ? <span className="inline-flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />{L('جاري التسجيل', 'Recording')} · {formatAudioTime(recordingSeconds)} · {L('اضغط إيقاف لإرسال الرسالة', 'Stop to send')}</span>
+                : L('جارٍ إرسال المرفق...', 'Sending attachment...')}
+            </div>
+          )}
           <input ref={fileRef} type="file" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendFile(f); e.target.value = ''; }} />
           <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendFile(f); e.target.value = ''; }} />
           <input ref={videoRef} type="file" accept="video/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendFile(f); e.target.value = ''; }} />

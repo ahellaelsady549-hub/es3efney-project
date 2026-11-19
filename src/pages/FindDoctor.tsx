@@ -93,7 +93,7 @@ const FindDoctor = () => {
             return { ...doctor, profile: profiles?.[0] ?? null };
           })
         );
-        setDoctors(doctorsWithProfiles);
+        setDoctors(doctorsWithProfiles.filter((doctor: Doctor) => doctor.user_id !== user?.id));
       }
     } catch (error) {
       console.error('Error fetching doctors:', error);

@@ -187,6 +187,39 @@ export type Database = {
           },
         ]
       }
+      chat_notifications: {
+        Row: {
+          id: string
+          recipient_user_id: string
+          conversation_id: string
+          sender_user_id: string
+          message_id: string
+          preview: string
+          is_read: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          recipient_user_id: string
+          conversation_id: string
+          sender_user_id: string
+          message_id: string
+          preview?: string
+          is_read?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          recipient_user_id?: string
+          conversation_id?: string
+          sender_user_id?: string
+          message_id?: string
+          preview?: string
+          is_read?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
       community_posts: {
         Row: {
           category: string
@@ -611,6 +644,7 @@ export type Database = {
       web_push_subscriptions: {
         Row: {
           appointment_reminders: boolean
+          chat_messages: boolean
           created_at: string
           endpoint: string
           id: string
@@ -621,6 +655,7 @@ export type Database = {
         }
         Insert: {
           appointment_reminders?: boolean
+          chat_messages?: boolean
           created_at?: string
           endpoint: string
           id?: string
@@ -631,6 +666,7 @@ export type Database = {
         }
         Update: {
           appointment_reminders?: boolean
+          chat_messages?: boolean
           created_at?: string
           endpoint?: string
           id?: string

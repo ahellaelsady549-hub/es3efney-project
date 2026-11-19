@@ -1,18 +1,33 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, Link, useLocation } from 'react-router-dom';
 import {
   Moon, Sun, Menu, User, LogIn, Stethoscope,
   Dumbbell, Settings as SettingsIcon, Home, Siren, HeartPulse, Pill,
   Lightbulb, Salad, MapPin, Newspaper, Activity, BookOpen,
   Brain, ClipboardPlus, MessageSquare, Info, UsersRound, CircleHelp,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
+import { supabase } from '@/integrations/supabase/client';
+import { toast as sonnerToast } from 'sonner';
+
+type ChatNotification = {
+  id: string;
+  recipient_user_id: string;
+  conversation_id: string;
+  sender_user_id: string;
+  message_id: string;
+  preview: string;
+  is_read: boolean;
+  created_at: string;
+};
 
 type Item =
   | { kind: 'section'; id: string; labelKey: string; icon: typeof Home }
@@ -46,8 +61,66 @@ export const Header = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const userId = user?.id;
   const [open, setOpen] = useState(false);
+  const [chatNotifications, setChatNotifications] = useState<ChatNotification[]>([]);
   const pendingSection = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setChatNotifications([]);
+      return;
+    }
+
+    let active = true;
+    const loadNotifications = async () => {
+      const { data, error } = await supabase
+        .from('chat_notifications')
+        .select('*')
+        .eq('recipient_user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (active && !error) setChatNotifications((data ?? []) as ChatNotification[]);
+      if (error) console.error('Could not load chat notifications:', error);
+    };
+
+    void loadNotifications();
+    const channel = supabase
+      .channel(`chat-notifications-${userId}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'chat_notifications',
+        filter: `recipient_user_id=eq.${userId}`,
+      }, (payload) => {
+        const notification = payload.new as ChatNotification;
+        setChatNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 20));
+        const openChat = () => navigate(`/chat/${notification.conversation_id}`);
+        sonnerToast(L('رسالة جديدة من الطرف الآخر', 'New message from the other participant'), {
+          description: notification.preview,
+          action: { label: L('فتح المحادثة', 'Open chat'), onClick: openChat },
+        });
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const systemNotification = new Notification(L('رسالة جديدة', 'New message'), { body: notification.preview });
+          systemNotification.onclick = () => { window.focus(); openChat(); systemNotification.close(); };
+        }
+      })
+      .subscribe();
+
+    return () => {
+      active = false;
+      void supabase.removeChannel(channel);
+    };
+  }, [userId, language, navigate]);
+
+  const openChatNotification = async (notification: ChatNotification) => {
+    if (!notification.is_read) {
+      const { error } = await supabase.from('chat_notifications').update({ is_read: true }).eq('id', notification.id);
+      if (error) sonnerToast.error(L('تعذر تحديث الإشعار', 'Could not update notification'));
+      setChatNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
+    }
+    navigate(`/chat/${notification.conversation_id}`);
+  };
 
   /** Home-page sections are reachable from every page. */
   const goSection = (id: string) => {
@@ -71,6 +144,35 @@ export const Header = () => {
           </Link>
 
           <div className="flex items-center gap-1.5">
+            {user && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative rounded-full" aria-label={L('إشعارات المحادثات', 'Chat notifications')}>
+                    <Bell className="h-5 w-5" />
+                    {chatNotifications.some((notification) => !notification.is_read) && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-background" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-80 max-w-[90vw]">
+                  <DropdownMenuLabel>{L('إشعارات المحادثات', 'Chat notifications')}</DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  {chatNotifications.length === 0 ? (
+                    <DropdownMenuItem disabled>{L('لا توجد رسائل جديدة', 'No chat notifications')}</DropdownMenuItem>
+                  ) : chatNotifications.map((notification) => (
+                    <DropdownMenuItem
+                      key={notification.id}
+                      onSelect={() => void openChatNotification(notification)}
+                      className={cn('block cursor-pointer whitespace-normal py-2', !notification.is_read && 'bg-primary/5')}
+                    >
+                      <span className="block font-medium">{L('رسالة جديدة', 'New message')}</span>
+                      <span className="block text-xs text-muted-foreground">{notification.preview}</span>
+                      <span className="block text-[11px] text-muted-foreground">{new Date(notification.created_at).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US')}</span>
+                    </DropdownMenuItem>
+                  ))}
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <Button
               variant="ghost"
               size="icon"

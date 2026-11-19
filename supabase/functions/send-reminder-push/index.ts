@@ -14,6 +14,7 @@ type ReminderSubscription = {
   timezone: string;
   medication_reminders: boolean;
   appointment_reminders: boolean;
+  chat_messages: boolean;
 };
 
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
@@ -63,9 +64,9 @@ serve(async (request) => {
     { auth: { persistSession: false, autoRefreshToken: false } },
   );
   const now = new Date();
-  const [{ data: subscriptions, error: subscriptionsError }, { data: medications, error: medicationsError }, { data: appointments, error: appointmentsError }] = await Promise.all([
+  const [{ data: subscriptions, error: subscriptionsError }, { data: medications, error: medicationsError }, { data: appointments, error: appointmentsError }, { data: chatNotifications, error: chatNotificationsError }] = await Promise.all([
     supabase.from('web_push_subscriptions')
-      .select('id,user_id,subscription,timezone,medication_reminders,appointment_reminders'),
+      .select('id,user_id,subscription,timezone,medication_reminders,appointment_reminders,chat_messages'),
     supabase.from('user_medications')
       .select('id,user_id,name,dosage,time')
       .eq('reminder_enabled', true),
@@ -74,8 +75,12 @@ serve(async (request) => {
       .eq('status', 'confirmed')
       .gte('starts_at', new Date(now.getTime() - 2 * 60 * 1000).toISOString())
       .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString()),
+    supabase.from('chat_notifications')
+      .select('id,recipient_user_id,conversation_id,preview,created_at')
+      .eq('is_read', false)
+      .gte('created_at', new Date(now.getTime() - 10 * 60 * 1000).toISOString()),
   ]);
-  const queryError = subscriptionsError || medicationsError || appointmentsError;
+  const queryError = subscriptionsError || medicationsError || appointmentsError || chatNotificationsError;
   if (queryError) {
     console.error('Could not load reminder data for Web Push:', queryError);
     return jsonResponse({ error: 'Could not load reminder data' }, 500);
@@ -84,7 +89,7 @@ serve(async (request) => {
   let sent = 0;
   let failed = 0;
   for (const subscription of (subscriptions ?? []) as ReminderSubscription[]) {
-    const pending: { key: string; title: string; body: string }[] = [];
+    const pending: { key: string; title: string; body: string; url: string }[] = [];
 
     if (subscription.medication_reminders) {
       const { date, time } = localDateAndTime(now, subscription.timezone || 'UTC');
@@ -101,6 +106,7 @@ serve(async (request) => {
           key: `medication:${subscription.user_id}:${medication.id}:${date}:${time}`,
           title: 'تذكير بموعد الدواء 💊',
           body: `حان موعد تناول ${medication.name} - ${medication.dosage}`,
+          url: '/dashboard?tab=medications',
         });
       }
     }
@@ -118,8 +124,20 @@ serve(async (request) => {
             key: `appointment:${subscription.user_id}:${appointment.id}:${stage.key}`,
             title: stage.key === 'now' ? 'حان موعد جلستك الطبية' : 'تذكير بموعد الطبيب',
             body: stage.body,
+            url: '/dashboard',
           });
         }
+      }
+    }
+
+    if (subscription.chat_messages) {
+      for (const notification of (chatNotifications ?? []).filter((item) => item.recipient_user_id === subscription.user_id)) {
+        pending.push({
+          key: `chat:${notification.id}`,
+          title: 'رسالة جديدة في محادثة الطبيب',
+          body: notification.preview,
+          url: `/chat/${notification.conversation_id}`,
+        });
       }
     }
 
@@ -138,7 +156,7 @@ serve(async (request) => {
           title: reminder.title,
           body: reminder.body,
           tag: reminder.key,
-          url: '/',
+          url: reminder.url,
         }));
         sent += 1;
       } catch (error) {
