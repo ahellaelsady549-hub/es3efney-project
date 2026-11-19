@@ -60,6 +60,59 @@ const formatAudioTime = (seconds: number) => {
   return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`;
 };
 
+const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
+  const audioContext = new AudioContext();
+  try {
+    const decoded = await audioContext.decodeAudioData(await recording.arrayBuffer());
+    const targetSampleRate = Math.min(decoded.sampleRate, 16000);
+    const ratio = decoded.sampleRate / targetSampleRate;
+    const outputLength = Math.max(1, Math.floor(decoded.length / ratio));
+    const monoSamples = new Float32Array(outputLength);
+    const channelData = Array.from({ length: decoded.numberOfChannels }, (_, channel) => decoded.getChannelData(channel));
+
+    for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
+      const start = Math.floor(outputIndex * ratio);
+      const end = Math.min(decoded.length, Math.floor((outputIndex + 1) * ratio));
+      let sum = 0;
+      let sampleCount = 0;
+      for (let inputIndex = start; inputIndex < end; inputIndex += 1) {
+        for (const channel of channelData) sum += channel[inputIndex] || 0;
+        sampleCount += channelData.length;
+      }
+      monoSamples[outputIndex] = sampleCount ? sum / sampleCount : 0;
+    }
+
+    const wavBuffer = new ArrayBuffer(44 + monoSamples.length * 2);
+    const view = new DataView(wavBuffer);
+    const writeText = (offset: number, value: string) => {
+      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
+    };
+
+    writeText(0, 'RIFF');
+    view.setUint32(4, 36 + monoSamples.length * 2, true);
+    writeText(8, 'WAVE');
+    writeText(12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, 1, true);
+    view.setUint16(22, 1, true);
+    view.setUint32(24, targetSampleRate, true);
+    view.setUint32(28, targetSampleRate * 2, true);
+    view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true);
+    writeText(36, 'data');
+    view.setUint32(40, monoSamples.length * 2, true);
+
+    for (let index = 0; index < monoSamples.length; index += 1) {
+      const sample = Math.max(-1, Math.min(1, monoSamples[index]));
+      view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+    }
+
+    return new File([wavBuffer], `voice-${Date.now()}.wav`, { type: 'audio/wav' });
+  } finally {
+    await audioContext.close().catch(() => undefined);
+  }
+};
+
 const VoiceMessagePlayer = ({ src, isOwn, L, onError }: { src: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
@@ -115,6 +168,7 @@ const Chat = () => {
   const [signedErrors, setSignedErrors] = useState<Record<string, boolean>>({});
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [processingVoice, setProcessingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [sendingMessage, setSendingMessage] = useState(false);
   const [tick, setTick] = useState(0);
@@ -230,9 +284,8 @@ const Chat = () => {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
-      recorder.onstop = () => {
+      recorder.onstop = async () => {
         const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
-        const extension = blob.type.includes('ogg') ? 'ogg' : blob.type.includes('mp4') ? 'm4a' : 'webm';
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
@@ -240,9 +293,24 @@ const Chat = () => {
         recordingStartedAtRef.current = null;
         setIsRecording(false);
         setRecordingSeconds(0);
-        if (blob.size > 0) void sendFile(new File([blob], `voice-${Date.now()}.${extension}`, { type: blob.type }));
+        if (!blob.size) return;
+
+        const originalFile = new File([blob], `voice-source-${Date.now()}`, { type: blob.type || 'audio/webm' });
+        setProcessingVoice(true);
+        try {
+          await sendFile(await convertVoiceRecordingToWav(blob));
+        } catch (error) {
+          console.error('Could not normalize voice recording to WAV; sending the original recording:', error);
+          toast({
+            title: L('تعذر تجهيز الصوت للصيغة القياسية', 'Could not normalize the recording'),
+            description: L('سيتم إرسال التسجيل الأصلي.', 'The original recording will be sent.'),
+          });
+          await sendFile(originalFile);
+        } finally {
+          setProcessingVoice(false);
+        }
       };
-      recorder.start(250);
+      recorder.start();
       recordingStartedAtRef.current = Date.now();
       setRecordingSeconds(0);
       setIsRecording(true);
@@ -612,11 +680,13 @@ const Chat = () => {
           </div>
         ) : (
         <div className="max-w-2xl mx-auto flex flex-wrap items-center gap-2">
-          {(isRecording || uploading) && (
+          {(isRecording || processingVoice || uploading) && (
             <div className="w-full text-center text-xs text-muted-foreground" role="status">
               {isRecording
                 ? <span className="inline-flex items-center gap-2"><span className="h-2 w-2 animate-pulse rounded-full bg-destructive" />{L('جاري التسجيل', 'Recording')} · {formatAudioTime(recordingSeconds)} · {L('اضغط إيقاف لإرسال الرسالة', 'Stop to send')}</span>
-                : L('جارٍ إرسال المرفق...', 'Sending attachment...')}
+                : processingVoice
+                  ? L('جارٍ تجهيز الصوت للإرسال...', 'Preparing voice message...')
+                  : L('جارٍ إرسال المرفق...', 'Sending attachment...')}
             </div>
           )}
           <input ref={fileRef} type="file" accept="image/*,video/*,audio/*,application/pdf,.doc,.docx" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void sendFile(f); e.target.value = ''; }} />
