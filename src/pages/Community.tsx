@@ -47,6 +47,54 @@ type Notification = {
   actor_id: string;
 };
 
+const COMMUNITY_MEDIA_URL_TTL_SECONDS = 60 * 60;
+const COMMUNITY_POSTS_PAGE_SIZE = 25;
+
+const getCommunityMediaPath = (value: string | null) => {
+  if (!value) return null;
+  if (!/^https?:\/\//i.test(value)) return value.replace(/^\/?community-media\//, '').split('?')[0];
+
+  try {
+    const pathname = new URL(value).pathname;
+    const marker = '/storage/v1/object/';
+    const markerIndex = pathname.indexOf(marker);
+    if (markerIndex < 0) return null;
+
+    const objectPath = pathname.slice(markerIndex + marker.length);
+    const bucketPrefix = /^(?:sign|authenticated|public)\/community-media\//;
+    if (!bucketPrefix.test(objectPath)) return null;
+    return decodeURIComponent(objectPath.replace(bucketPrefix, ''));
+  } catch {
+    return null;
+  }
+};
+
+const signCommunityMedia = async (posts: Post[]) => {
+  const mediaPaths = [...new Set(posts.flatMap(post => [
+    getCommunityMediaPath(post.image_url),
+    getCommunityMediaPath(post.video_url),
+    getCommunityMediaPath(post.voice_url),
+  ]).filter((path): path is string => Boolean(path)))];
+  const signedByPath = new Map<string, string>();
+
+  if (mediaPaths.length > 0) {
+    const { data, error } = await supabase.storage
+      .from('community-media')
+      .createSignedUrls(mediaPaths, COMMUNITY_MEDIA_URL_TTL_SECONDS);
+    if (error) throw error;
+    data?.forEach(file => {
+      if (file.path && file.signedUrl) signedByPath.set(file.path, file.signedUrl);
+    });
+  }
+
+  return posts.map(post => ({
+    ...post,
+    image_url: signedByPath.get(getCommunityMediaPath(post.image_url) ?? '') ?? null,
+    video_url: signedByPath.get(getCommunityMediaPath(post.video_url) ?? '') ?? null,
+    voice_url: signedByPath.get(getCommunityMediaPath(post.voice_url) ?? '') ?? null,
+  }));
+};
+
 const Community = () => {
   const { user } = useAuth();
   const { L, language } = useLanguage();
@@ -59,6 +107,8 @@ const Community = () => {
   const [newContent, setNewContent] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isLoadingMorePosts, setIsLoadingMorePosts] = useState(false);
+  const [hasMorePosts, setHasMorePosts] = useState(true);
   const [feedError, setFeedError] = useState<string | null>(null);
   const [isSendingPost, setIsSendingPost] = useState(false);
   const [replyTo, setReplyTo] = useState<string | null>(null);
@@ -154,23 +204,30 @@ const Community = () => {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
-  const fetchPosts = async () => {
-    setIsLoading(true);
+  const fetchPosts = async (loadMore = false) => {
+    if (loadMore) setIsLoadingMorePosts(true);
+    else setIsLoading(true);
     try {
+      const start = loadMore ? posts.length : 0;
       const { data, error } = await supabase
         .from('community_posts')
         .select('*')
         .eq('category', activeCategory)
         .is('parent_id', null)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(start, start + COMMUNITY_POSTS_PAGE_SIZE - 1);
       if (error) throw error;
 
       const loadedPosts = (data || []) as Post[];
-      setPosts(loadedPosts);
+      setHasMorePosts(loadedPosts.length === COMMUNITY_POSTS_PAGE_SIZE);
+      const postsWithSignedMedia = await signCommunityMedia(loadedPosts);
+      setPosts(current => loadMore ? [...current, ...postsWithSignedMedia] : postsWithSignedMedia);
       setFeedError(null);
-      const userIds = [...new Set(loadedPosts.map(p => p.user_id))];
-      await fetchProfiles(userIds);
-      await fetchLikesForPosts(loadedPosts.map(p => p.id));
+      const userIds = [...new Set(postsWithSignedMedia.map(p => p.user_id))];
+      await Promise.all([
+        fetchProfiles(userIds),
+        fetchLikesForPosts(postsWithSignedMedia.map(p => p.id)),
+      ]);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFeedError(message);
@@ -180,7 +237,8 @@ const Community = () => {
         variant: 'destructive',
       });
     } finally {
-      setIsLoading(false);
+      if (loadMore) setIsLoadingMorePosts(false);
+      else setIsLoading(false);
     }
   };
 
@@ -191,14 +249,15 @@ const Community = () => {
       .select('post_id, user_id')
       .in('post_id', postIds);
     
-    const likesMap: Record<string, { count: number; liked: boolean }> = {};
-    for (const pid of postIds) {
-      const postLikesArr = allLikes?.filter(l => l.post_id === pid) || [];
-      likesMap[pid] = {
-        count: postLikesArr.length,
-        liked: postLikesArr.some(l => l.user_id === user.id),
-      };
-    }
+    const likesMap: Record<string, { count: number; liked: boolean }> = Object.fromEntries(
+      postIds.map(postId => [postId, { count: 0, liked: false }]),
+    );
+    allLikes?.forEach(like => {
+      const entry = likesMap[like.post_id];
+      if (!entry) return;
+      entry.count += 1;
+      if (like.user_id === user.id) entry.liked = true;
+    });
     setPostLikes(prev => ({ ...prev, ...likesMap }));
   };
 
@@ -224,16 +283,15 @@ const Community = () => {
 
   const fetchProfiles = async (userIds: string[]) => {
     const newProfiles: Record<string, ProfileInfo> = { ...profiles };
-    for (const uid of userIds) {
-      if (!newProfiles[uid]) {
-        const { data } = await supabase.rpc('get_profile_public', { profile_user_id: uid });
-        if (data && data.length > 0) {
-          newProfiles[uid] = { full_name: data[0].full_name, avatar_url: data[0].avatar_url };
-        } else {
-          newProfiles[uid] = { full_name: L('مستخدم','User'), avatar_url: null };
-        }
-      }
-    }
+    const missingIds = userIds.filter(uid => !newProfiles[uid]);
+    const results = await Promise.all(missingIds.map(async uid => {
+      const { data } = await supabase.rpc('get_profile_public', { profile_user_id: uid });
+      const profile = data?.[0];
+      return [uid, profile
+        ? { full_name: profile.full_name, avatar_url: profile.avatar_url }
+        : { full_name: L('مستخدم', 'User'), avatar_url: null }] as const;
+    }));
+    results.forEach(([uid, profile]) => { newProfiles[uid] = profile; });
     setProfiles(newProfiles);
   };
 
@@ -289,12 +347,7 @@ const Community = () => {
   const uploadFile = async (file: File | Blob, path: string) => {
     const { data, error } = await supabase.storage.from('community-media').upload(path, file);
     if (error) throw error;
-    // Bucket is private: signed URL scoped to authenticated access
-    const { data: signed, error: signErr } = await supabase.storage
-      .from('community-media')
-      .createSignedUrl(data.path, 60 * 60 * 24 * 365);
-    if (signErr || !signed) throw signErr ?? new Error('failed to sign url');
-    return signed.signedUrl;
+    return data.path;
   };
 
   const handleSendPost = async () => {
@@ -804,10 +857,19 @@ const Community = () => {
                     
                     profiles={profiles}
                     fetchProfiles={fetchProfiles}
+                    signCommunityMedia={signCommunityMedia}
                     likes={postLikes[post.id] || { count: 0, liked: false }}
                     onToggleLike={() => toggleLike(post.id)}
                   />
                 ))}
+                {hasMorePosts && (
+                  <div className="flex justify-center pt-2">
+                    <Button variant="outline" onClick={() => void fetchPosts(true)} disabled={isLoadingMorePosts}>
+                      {isLoadingMorePosts ? <Loader2 className="me-2 h-4 w-4 animate-spin" /> : null}
+                      {L('تحميل منشورات أقدم', 'Load older posts')}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -835,7 +897,7 @@ const Community = () => {
 };
 
 // PostCard sub-component
-const PostCard = ({ post, profile, isOwner, isAdmin, onReply, onDelete, onReport, profiles, fetchProfiles, likes, onToggleLike }: {
+const PostCard = ({ post, profile, isOwner, isAdmin, onReply, onDelete, onReport, profiles, fetchProfiles, signCommunityMedia, likes, onToggleLike }: {
   post: Post;
   profile?: ProfileInfo;
   isOwner: boolean;
@@ -846,6 +908,7 @@ const PostCard = ({ post, profile, isOwner, isAdmin, onReply, onDelete, onReport
   
   profiles: Record<string, ProfileInfo>;
   fetchProfiles: (ids: string[]) => Promise<void>;
+  signCommunityMedia: (posts: Post[]) => Promise<Post[]>;
   likes: { count: number; liked: boolean };
   onToggleLike: () => void;
 }) => {
@@ -860,8 +923,9 @@ const PostCard = ({ post, profile, isOwner, isAdmin, onReply, onDelete, onReport
       .eq('parent_id', post.id)
       .order('created_at', { ascending: true });
     if (data) {
-      setReplies(data);
-      const uids = [...new Set(data.map(r => r.user_id))];
+      const repliesWithSignedMedia = await signCommunityMedia(data as Post[]);
+      setReplies(repliesWithSignedMedia);
+      const uids = [...new Set(repliesWithSignedMedia.map(r => r.user_id))];
       await fetchProfiles(uids);
     }
   };

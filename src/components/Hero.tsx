@@ -1,4 +1,4 @@
-import { Search, X, Pill, Phone, HeartPulse } from 'lucide-react';
+import { Search, X, Pill, Phone, HeartPulse, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card } from '@/components/ui/card';
@@ -7,7 +7,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { normalizeSearchText } from '@/lib/search';
 import { useState } from 'react';
 import { conditionCatalog, type ConditionRecord } from '@/data/conditionCatalog';
-import { treatments } from '@/data/treatments';
+import type { Treatment } from '@/data/treatments';
 import { ConditionCauses } from '@/components/ConditionCauses';
 import { MedicinePrice, MedicineUseNotice } from '@/components/MedicinePrice';
 
@@ -17,29 +17,38 @@ export const Hero = () => {
   const [searchType, setSearchType] = useState<'symptoms' | 'disease'>('symptoms');
   const [selectedDisease, setSelectedDisease] = useState('');
   const [searchResults, setSearchResults] = useState<ConditionRecord[]>([]);
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
   const [showResults, setShowResults] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
-  const handleSearch = () => {
-    if (searchQuery.trim() || selectedDisease) {
-      const query = normalizeSearchText(searchQuery.trim());
-      let results;
-      
-      if (selectedDisease) {
-        results = conditionCatalog.filter(disease => disease.id === selectedDisease);
-      } else if (searchType === 'symptoms') {
-        results = conditionCatalog.filter(disease => {
-          const symptoms = language === 'ar' ? disease.symptomsAr : disease.symptomsEn;
-          return symptoms.some(symptom => normalizeSearchText(symptom).includes(query));
-        });
-      } else {
-        results = conditionCatalog.filter(disease => {
-          const name = language === 'ar' ? disease.nameAr : disease.nameEn;
-          return normalizeSearchText(name).includes(query);
-        });
+  const handleSearch = async () => {
+    if ((searchQuery.trim() || selectedDisease) && !isSearching) {
+      setIsSearching(true);
+      try {
+        const { treatments: loadedTreatments } = await import('@/data/treatments');
+        const query = normalizeSearchText(searchQuery.trim());
+        let results;
+
+        if (selectedDisease) {
+          results = conditionCatalog.filter(disease => disease.id === selectedDisease);
+        } else if (searchType === 'symptoms') {
+          results = conditionCatalog.filter(disease => {
+            const symptoms = language === 'ar' ? disease.symptomsAr : disease.symptomsEn;
+            return symptoms.some(symptom => normalizeSearchText(symptom).includes(query));
+          });
+        } else {
+          results = conditionCatalog.filter(disease => {
+            const name = language === 'ar' ? disease.nameAr : disease.nameEn;
+            return normalizeSearchText(name).includes(query);
+          });
+        }
+
+        setTreatments(loadedTreatments);
+        setSearchResults(results);
+        setShowResults(true);
+      } finally {
+        setIsSearching(false);
       }
-      
-      setSearchResults(results);
-      setShowResults(true);
     }
   };
 
@@ -157,10 +166,11 @@ export const Hero = () => {
               <Button 
                 type="button"
                 onClick={handleSearch}
-                disabled={!searchQuery.trim() && !selectedDisease}
+                disabled={(!searchQuery.trim() && !selectedDisease) || isSearching}
                 className="h-14 px-8 bg-gradient-medical hover:opacity-90 shadow-soft"
               >
-                {t('hero.searchButton')}
+                {isSearching ? <Loader2 className="me-2 h-4 w-4 animate-spin" aria-hidden /> : null}
+                {isSearching ? L('جارٍ البحث...', 'Searching...') : t('hero.searchButton')}
               </Button>
             </div>
           </div>

@@ -88,7 +88,7 @@ const FindDoctor = () => {
       // Fetch profiles using secure view (hides email)
       if (data) {
         const doctorsWithProfiles = await Promise.all(
-          data.map(async (doctor: any) => {
+          data.map(async (doctor) => {
             const { data: profiles } = await supabase.rpc('get_profile_public', { profile_user_id: doctor.user_id });
             return { ...doctor, profile: profiles?.[0] ?? null };
           })
