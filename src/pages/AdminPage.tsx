@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Header } from '@/components/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,24 +19,79 @@ type Doc = {
   ai_cv_review: string | null; rejection_reason: string | null; reviewed_at: string | null; created_at: string;
 };
 
+type IdentityApplication = {
+  id: string;
+  user_id: string;
+  national_id: string;
+  governorate: string;
+  home_address: string;
+  id_front_path: string;
+  id_back_path: string;
+  account_type: 'doctor' | 'user';
+  status: 'pending' | 'approved' | 'rejected';
+  ai_review: string | null;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  profile?: { full_name: string | null; email: string | null };
+};
+
 const AdminPage = () => {
   const { user, loading } = useAuth();
   const { L } = useLanguage();
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [docs, setDocs] = useState<Doc[]>([]);
+  const [identityApplications, setIdentityApplications] = useState<IdentityApplication[]>([]);
   const [reasons, setReasons] = useState<Record<string, string>>({});
+  const doctorRpcErrorShown = useRef(false);
+  const identityQueryErrorShown = useRef(false);
 
   const load = useCallback(async () => {
-    const { data, error } = await supabase.rpc('get_doctor_requests');
+    const [doctorResult, identityResult] = await Promise.all([
+      supabase.rpc('get_doctor_requests'),
+      supabase.from('identity_applications').select('*').order('created_at', { ascending: false }),
+    ]);
+    const { data, error } = doctorResult;
     if (error) {
       console.error('Could not load doctor verification requests:', error);
       const missingRpc = error.code === 'PGRST202' || /get_doctor_requests/i.test(error.message);
-      toast.error(missingRpc
-        ? L('قاعدة البيانات تحتاج ترحيل طلبات توثيق الطبيب: شغّل ملف 20261119120000_doctor_verification_admin_queue.sql كاملًا.', 'Doctor verification setup is missing. Run the full 20261119120000_doctor_verification_admin_queue.sql migration.')
-        : error.message);
+      if (!doctorRpcErrorShown.current) {
+        doctorRpcErrorShown.current = true;
+        toast.error(missingRpc
+          ? L('قاعدة البيانات تحتاج ترحيل طلبات توثيق الطبيب: شغّل ملف 20261119120000_doctor_verification_admin_queue.sql كاملًا.', 'Doctor verification setup is missing. Run the full 20261119120000_doctor_verification_admin_queue.sql migration.')
+          : error.message);
+      }
+    } else {
+      doctorRpcErrorShown.current = false;
+      setDocs((data ?? []) as Doc[]);
+    }
+
+    if (identityResult.error) {
+      console.error('Could not load identity verification requests:', identityResult.error);
+      if (!identityQueryErrorShown.current) {
+        identityQueryErrorShown.current = true;
+        toast.error(L('تعذّر تحميل طلبات توثيق الهوية. شغّل ترحيل 20261119130000_admin_identity_application_visibility.sql كاملًا.', 'Could not load identity requests. Run the full 20261119130000_admin_identity_application_visibility.sql migration.'));
+      }
       return false;
     }
-    setDocs((data ?? []) as Doc[]);
+    identityQueryErrorShown.current = false;
+
+    const applications = (identityResult.data ?? []) as IdentityApplication[];
+    const userIds = [...new Set(applications.map((application) => application.user_id))];
+    if (userIds.length) {
+      const { data: profiles, error: profilesError } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, email')
+        .in('user_id', userIds);
+      if (profilesError) console.error('Could not load applicant profiles:', profilesError);
+      const profileByUserId = new Map((profiles ?? []).map((profile) => [profile.user_id, profile] as const));
+      setIdentityApplications(applications.map((application) => ({
+        ...application,
+        profile: profileByUserId.get(application.user_id),
+      })));
+    } else {
+      setIdentityApplications(applications);
+    }
     return true;
   }, [L]);
 
@@ -84,6 +139,29 @@ const AdminPage = () => {
     window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
   };
 
+  const openIdentityDocument = async (path: string) => {
+    const { data, error } = await supabase.storage.from('identity-documents').createSignedUrl(path, 300);
+    if (error || !data) {
+      toast.error(error?.message || L('تعذر فتح صورة البطاقة', 'Could not open ID image'));
+      return;
+    }
+    window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+  };
+
+  const decideIdentity = async (application: IdentityApplication, approve: boolean) => {
+    const reason = (reasons[application.id] ?? '').trim();
+    if (!approve && reason.length < 5) return toast.error(L('اكتب سبب الرفض أو المراجعة (5 أحرف على الأقل)', 'Write a rejection/review reason (at least 5 characters)'));
+    const { error } = await supabase.from('identity_applications').update({
+      status: approve ? 'approved' : 'rejected',
+      rejection_reason: approve ? null : reason,
+      reviewed_at: new Date().toISOString(),
+    }).eq('id', application.id);
+    if (error) return toast.error(`${L('تعذّر تحديث الطلب', 'Could not update request')}: ${error.message}`);
+    toast.success(approve ? L('تم قبول توثيق الهوية', 'Identity verification approved') : L('تم رفض الطلب مع حفظ السبب', 'Request rejected with reason saved'));
+    setReasons((current) => ({ ...current, [application.id]: '' }));
+    await load();
+  };
+
   const decide = async (id: string, approve: boolean) => {
     const reason = (reasons[id] ?? '').trim();
     if (!approve && reason.length < 5) return toast.error(L('اكتب سبب الرفض', 'Write the rejection reason'));
@@ -104,6 +182,42 @@ const AdminPage = () => {
 
   const pending = docs.filter((d) => !d.is_verified && d.verification_status !== 'rejected');
   const answered = docs.filter((d) => d.is_verified || d.verification_status === 'rejected');
+  const pendingIdentity = identityApplications.filter((application) => application.status === 'pending');
+  const answeredIdentity = identityApplications.filter((application) => application.status !== 'pending');
+
+  const renderIdentityCard = (application: IdentityApplication, actions: boolean) => (
+    <Card key={application.id}>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+          {application.profile?.full_name || application.profile?.email || application.user_id}
+          <Badge variant={application.status === 'approved' ? 'default' : application.status === 'rejected' ? 'destructive' : 'secondary'}>
+            {application.status === 'approved' ? L('مقبول', 'Approved') : application.status === 'rejected' ? L('مرفوض', 'Rejected') : L('قيد المراجعة', 'Under review')}
+          </Badge>
+          <Badge variant="outline">{application.account_type === 'doctor' ? L('طبيب', 'Doctor') : L('مستخدم', 'User')}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {application.profile?.email && <p><b>{L('البريد', 'Email')}:</b> {application.profile.email}</p>}
+        <p><b>{L('الرقم القومي', 'National ID')}:</b> {application.national_id}</p>
+        <p><b>{L('المحافظة', 'Governorate')}:</b> {application.governorate}</p>
+        <p><b>{L('عنوان السكن', 'Home address')}:</b> {application.home_address}</p>
+        <div className="flex flex-wrap gap-2">
+          <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_front_path)}>{L('عرض وجه البطاقة', 'View ID front')}</Button>
+          <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_back_path)}>{L('عرض ظهر البطاقة', 'View ID back')}</Button>
+        </div>
+        {application.ai_review && <div className="rounded-md bg-muted p-3"><b>{L('مراجعة الذكاء الاصطناعي', 'AI review')}:</b><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{application.ai_review}</p></div>}
+        {application.rejection_reason && <p className="text-destructive"><b>{L('سبب الرفض / المراجعة', 'Rejection / review reason')}:</b> {application.rejection_reason}</p>}
+        {application.reviewed_at && <p className="text-muted-foreground">{L('تاريخ الرد', 'Reviewed')}: {new Date(application.reviewed_at).toLocaleString()}</p>}
+        {actions && <>
+          <Textarea placeholder={L('سبب الرفض', 'Reason for rejection')} value={reasons[application.id] ?? ''} onChange={(event) => setReasons({ ...reasons, [application.id]: event.target.value })} rows={2} />
+          <div className="flex flex-wrap gap-2">
+            <Button size="lg" onClick={() => decideIdentity(application, true)}><Check className="h-4 w-4 me-1" />{L('قبول التوثيق', 'Approve identity')}</Button>
+            <Button size="lg" variant="destructive" onClick={() => decideIdentity(application, false)}><X className="h-4 w-4 me-1" />{L('رفض مع السبب', 'Reject with reason')}</Button>
+          </div>
+        </>}
+      </CardContent>
+    </Card>
+  );
 
   const renderCard = (d: Doc, actions: boolean) => (
     <Card key={d.id}>
@@ -149,12 +263,31 @@ const AdminPage = () => {
         <h1 className="text-2xl font-bold">{L('لوحة الأدمن', 'Admin panel')}</h1>
         {isAdmin === null ? <Loader2 className="h-6 w-6 animate-spin mx-auto" /> : (
           <Tabs defaultValue="new">
-            <TabsList className="grid w-full grid-cols-3 h-12">
-              <TabsTrigger value="new">{L('طلبات جديدة', 'New requests')} ({pending.length})</TabsTrigger>
-              <TabsTrigger value="done">{L('تم الرد عليها', 'Answered')} ({answered.length})</TabsTrigger>
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+              <TabsTrigger value="new">{L('توثيق طبيب جديد', 'New doctor reviews')} ({pending.length})</TabsTrigger>
+              <TabsTrigger value="done">{L('توثيق طبيب تم الرد عليه', 'Answered doctor reviews')} ({answered.length})</TabsTrigger>
+              <TabsTrigger value="identity">{L('طلبات توثيق الهوية', 'Identity requests')} ({pendingIdentity.length})</TabsTrigger>
               <TabsTrigger value="bans">{L('الحظر', 'Bans')}</TabsTrigger>
             </TabsList>
             <TabsContent value="bans"><ChatBansAdmin /></TabsContent>
+            <TabsContent value="identity" className="space-y-4">
+              <Tabs defaultValue="user-pending" className="space-y-4">
+                <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4">
+                  <TabsTrigger value="user-pending">{L('مستخدمون جدد', 'New users')} ({pendingIdentity.filter((a) => a.account_type === 'user').length})</TabsTrigger>
+                  <TabsTrigger value="doctor-pending">{L('أطباء جدد', 'New doctors')} ({pendingIdentity.filter((a) => a.account_type === 'doctor').length})</TabsTrigger>
+                  <TabsTrigger value="user-answered">{L('مستخدمون تم الرد عليهم', 'Answered users')} ({answeredIdentity.filter((a) => a.account_type === 'user').length})</TabsTrigger>
+                  <TabsTrigger value="doctor-answered">{L('أطباء تم الرد عليهم', 'Answered doctors')} ({answeredIdentity.filter((a) => a.account_type === 'doctor').length})</TabsTrigger>
+                </TabsList>
+                {(['user-pending', 'doctor-pending', 'user-answered', 'doctor-answered'] as const).map((tab) => {
+                  const isPending = tab.endsWith('pending');
+                  const accountType = tab.startsWith('doctor') ? 'doctor' : 'user';
+                  const applications = (isPending ? pendingIdentity : answeredIdentity).filter((application) => application.account_type === accountType);
+                  return <TabsContent key={tab} value={tab} className="space-y-4">
+                    {applications.length === 0 ? <p className="text-muted-foreground">{L('لا توجد طلبات', 'No requests')}</p> : applications.map((application) => renderIdentityCard(application, isPending))}
+                  </TabsContent>;
+                })}
+              </Tabs>
+            </TabsContent>
             <TabsContent value="new" className="space-y-4">
               {pending.length === 0 ? <p className="text-muted-foreground">{L('لا توجد طلبات', 'No requests')}</p> : pending.map((d) => renderCard(d, true))}
             </TabsContent>

@@ -103,6 +103,12 @@ interface UserDisease {
   created_at: string;
 }
 
+interface IdentityApplicationStatus {
+  status: 'pending' | 'approved' | 'rejected';
+  rejection_reason: string | null;
+  created_at: string;
+}
+
 const Dashboard = () => {
   const { user, loading } = useAuth();
   const navigate = useNavigate();
@@ -119,6 +125,7 @@ const Dashboard = () => {
   const [dietPlans, setDietPlans] = useState<DietPlan[]>([]);
   const [personalityResults, setPersonalityResults] = useState<PersonalityResult[]>([]);
   const [userDiseases, setUserDiseases] = useState<UserDisease[]>([]);
+  const [identityStatus, setIdentityStatus] = useState<IdentityApplicationStatus | null>(null);
   const [isAddingMed, setIsAddingMed] = useState(false);
   const [isAddingDisease, setIsAddingDisease] = useState(false);
   const [newDisease, setNewDisease] = useState({ name: '', type: 'physical' as 'physical' | 'mental' });
@@ -190,6 +197,16 @@ const Dashboard = () => {
       .order('created_at', { ascending: false });
     
     if (diseasesData) setUserDiseases(diseasesData);
+
+    const { data: identityData, error: identityError } = await supabase
+      .from('identity_applications')
+      .select('status, rejection_reason, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (identityError) console.error('Could not load identity application status:', identityError);
+    setIdentityStatus(identityData as IdentityApplicationStatus | null);
   };
 
   const handleAddMedication = async () => {
@@ -427,6 +444,30 @@ const Dashboard = () => {
             </div>
           </CardContent>
         </Card>
+
+        {identityStatus && (
+          <Card className={`mb-6 border ${identityStatus.status === 'pending' ? 'border-amber-500/40 bg-amber-500/5' : identityStatus.status === 'rejected' ? 'border-destructive/40 bg-destructive/5' : 'border-primary/30 bg-primary/5'}`}>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
+                {identityStatus.status === 'pending'
+                  ? L('حسابك قيد المراجعة', 'Your account is under review')
+                  : identityStatus.status === 'approved'
+                    ? L('تم قبول توثيق حسابك', 'Your account verification was approved')
+                    : L('تم الرد على طلب التوثيق', 'Your verification request has been reviewed')}
+                <Badge variant={identityStatus.status === 'rejected' ? 'destructive' : 'secondary'}>
+                  {identityStatus.status === 'pending' ? L('قيد المراجعة', 'Under review') : identityStatus.status === 'approved' ? L('مقبول', 'Approved') : L('مرفوض', 'Rejected')}
+                </Badge>
+              </CardTitle>
+              <CardDescription>
+                {identityStatus.status === 'pending'
+                  ? L('استلمنا بياناتك وصور البطاقة، وفريق الإدارة يراجعها الآن.', 'We received your details and ID images. The admin team is reviewing them.')
+                  : identityStatus.status === 'approved'
+                    ? L('تم التحقق من بياناتك بنجاح.', 'Your details have been verified.')
+                    : identityStatus.rejection_reason || L('راجع البيانات ثم تواصل مع الدعم لإعادة التقديم.', 'Review your details and contact support to apply again.')}
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        )}
 
         <UpcomingAppointmentCountdown userId={user.id} doctorId={myDoctorId} />
 

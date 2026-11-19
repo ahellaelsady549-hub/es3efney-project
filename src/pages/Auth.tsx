@@ -77,6 +77,7 @@ const Auth = () => {
   const [pendingEmail, setPendingEmail] = useState('');
   const [pendingUserData, setPendingUserData] = useState<PendingSignupData | null>(null);
   const [pendingVerifiedUserId, setPendingVerifiedUserId] = useState<string | null>(null);
+  const [signupSubmitted, setSignupSubmitted] = useState(false);
 
   const saveSignupApplications = async (userId: string, signup: PendingSignupData) => {
     const uploaded: Array<{ bucket: string; path: string }> = [];
@@ -134,10 +135,10 @@ const Auth = () => {
   
 
   useEffect(() => {
-    if (user && !isLoading && !showOtpInput && !pendingVerifiedUserId) {
+    if (user && !isLoading && !showOtpInput && !pendingVerifiedUserId && !signupSubmitted) {
       navigate('/');
     }
-  }, [user, navigate, isLoading, showOtpInput, pendingVerifiedUserId]);
+  }, [user, navigate, isLoading, showOtpInput, pendingVerifiedUserId, signupSubmitted]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -337,13 +338,14 @@ const Auth = () => {
     }
 
     setIsLoading(false);
+    setSignupSubmitted(true);
     toast({
-      title: L('تم التسجيل بنجاح','Registered successfully'),
+      title: L('حسابك قيد المراجعة', 'Your account is under review'),
       description: userType === 'doctor'
-        ? L('تم إرسال طلب الطبيب للإدارة للمراجعة','Your doctor application has been sent to the administrators for review')
-        : L('تم إرسال بيانات الهوية للمراجعة','Your identity details have been sent for review')
+        ? L('استلمنا طلب توثيق الهوية والسيرة الذاتية. ستظهر نتيجة المراجعة في لوحة التحكم.', 'Your identity and CV applications were received. The review result will appear in your dashboard.')
+        : L('استلمنا بيانات التحقق. ستظهر نتيجة المراجعة في لوحة التحكم.', 'Your verification details were received. The review result will appear in your dashboard.')
     });
-    navigate('/');
+    navigate('/dashboard');
   };
 
   const handleVerifyOtp = async () => {
@@ -399,16 +401,17 @@ const Auth = () => {
     }
 
     setIsLoading(false);
+    setSignupSubmitted(true);
     toast({
-      title: L('تم التحقق بنجاح','Verified successfully'),
+      title: L('حسابك قيد المراجعة', 'Your account is under review'),
       description: pendingUserData?.userType === 'doctor' 
-        ? L('تم إرسال طلب الطبيب للإدارة للمراجعة','Your doctor application has been sent to the administrators for review')
-        : L('تم إرسال بيانات الهوية للمراجعة','Your identity details have been sent for review')
+        ? L('تم تأكيد البريد واستلام طلب توثيق الهوية والسيرة الذاتية. تابع النتيجة من لوحة التحكم.', 'Email confirmed and identity/CV applications received. Follow the result in your dashboard.')
+        : L('تم تأكيد البريد واستلام بيانات التحقق. تابع النتيجة من لوحة التحكم.', 'Email confirmed and verification details received. Follow the result in your dashboard.')
     });
     setPendingVerifiedUserId(null);
     setPendingUserData(null);
     setShowOtpInput(false);
-    navigate('/');
+    navigate('/dashboard');
   };
 
   const handleResendOtp = async () => {

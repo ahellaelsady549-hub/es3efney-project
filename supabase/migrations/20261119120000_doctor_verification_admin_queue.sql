@@ -3,6 +3,9 @@ ALTER TABLE public.doctors
   ADD COLUMN IF NOT EXISTS rejection_reason text,
   ADD COLUMN IF NOT EXISTS reviewed_at timestamptz;
 
+-- PostgreSQL cannot replace a table-returning function with a different OUT row type.
+DROP FUNCTION IF EXISTS public.get_doctor_requests();
+
 CREATE OR REPLACE FUNCTION public.get_doctor_requests()
 RETURNS TABLE (
   id uuid,
