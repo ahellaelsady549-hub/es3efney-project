@@ -218,7 +218,7 @@ const Chat = () => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       const audioElement = document.createElement('audio');
-      const supportedMimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4']
+      const supportedMimeTypes = ['audio/mp4', 'audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus']
         .filter((mimeType) => MediaRecorder.isTypeSupported(mimeType));
       const preferredMimeType = supportedMimeTypes.find((mimeType) => audioElement.canPlayType(mimeType.split(';')[0]) !== '')
         || supportedMimeTypes[0];
@@ -526,6 +526,8 @@ const Chat = () => {
             const storagePath = message.file_url?.startsWith('storage:') ? message.file_url.slice(8) : null;
             const fileUrl = storagePath ? signed[message.id] : message.file_url || undefined;
             const fileError = signedErrors[message.id];
+            const isAudioMessage = message.file_type?.startsWith('audio/')
+              || /voice-[^/]*\.(m4a|mp4|webm|ogg|mp3|wav)$/i.test(message.file_url || '');
             return (
               <div
                 key={message.id}
@@ -568,7 +570,7 @@ const Chat = () => {
                           onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))}
                           className="max-h-96 w-full rounded-lg bg-black"
                         />
-                      ) : message.file_type?.startsWith('audio/') ? (
+                      ) : isAudioMessage ? (
                         <VoiceMessagePlayer key={fileUrl} src={fileUrl} isOwn={isOwn} L={L} onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))} />
                       ) : (
                         <a
