@@ -1,1 +1,8 @@
 project_id = "rmcbcxtbdinpmsyafaao"
+
+[auth.email]
+enable_confirmations = true
+
+[auth.email.template.confirmation]
+subject = "رمز تأكيد بريدك الإلكتروني - إسعفني"
+content_path = "./supabase/templates/confirmation.html"

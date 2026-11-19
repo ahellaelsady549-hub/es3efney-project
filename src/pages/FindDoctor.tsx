@@ -175,14 +175,11 @@ const FindDoctor = () => {
     if (!user || !selectedDoctor || userRating === 0) return;
 
     try {
-      const { error } = await supabase
-        .from('doctor_ratings')
-        .upsert({
-          doctor_id: selectedDoctor.id,
-          user_id: user.id,
-          rating: userRating,
-          review: userReview
-        }, { onConflict: 'doctor_id,user_id' });
+      const { error } = await supabase.rpc('submit_doctor_rating', {
+        _doctor_id: selectedDoctor.id,
+        _rating: userRating,
+        _review: userReview.trim() || null,
+      });
 
       if (error) throw error;
 

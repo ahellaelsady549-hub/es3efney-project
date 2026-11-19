@@ -23,6 +23,9 @@ const passwordSchema = z.string().min(6, 'كلمة المرور 6 أحرف عل�
 const nameSchema = z.string().min(2, 'الاسم حرفين على الأقل / Name must be at least 2 characters');
 
 type PendingSignupData = {
+  requestKey: string;
+  fullName: string;
+  email: string;
   userType: 'user' | 'doctor';
   nationalId: string;
   governorate: string;
@@ -153,7 +156,7 @@ const Auth = () => {
       if (identityError) throw identityError;
 
       if (signup.userType === 'doctor') {
-        const { error: doctorError } = await supabase.from('doctors').upsert({
+        const { data: doctor, error: doctorError } = await supabase.from('doctors').upsert({
           user_id: userId,
           specialty: signup.doctorSpecialty,
           bio: signup.doctorBio,
@@ -166,8 +169,32 @@ const Auth = () => {
           workplace_address: signup.workplaceAddress,
           is_verified: false,
           verification_status: 'pending',
-        }, { onConflict: 'user_id' });
+        }, { onConflict: 'user_id' }).select('id').single();
         if (doctorError) throw doctorError;
+
+        const { error: requestError } = await supabase.from('doctor_verification_requests').upsert({
+          submission_key: signup.requestKey,
+          doctor_id: doctor.id,
+          user_id: userId,
+          applicant_name: signup.fullName,
+          applicant_email: signup.email,
+          national_id: signup.nationalId,
+          governorate: signup.governorate,
+          home_address: signup.homeAddress,
+          id_front_path: frontPath,
+          id_back_path: backPath,
+          specialty: signup.doctorSpecialty,
+          bio: signup.doctorBio,
+          cv_url: cvPath!,
+          cv_link: signup.doctorCvUrl || null,
+          portfolio_url: signup.doctorPortfolioUrl || null,
+          ai_cv_review: signup.cvReview,
+          workplace_type: signup.workplaceType || null,
+          workplace_name: signup.workplaceName || null,
+          workplace_address: signup.workplaceAddress || null,
+          status: 'pending',
+        }, { onConflict: 'submission_key', ignoreDuplicates: true });
+        if (requestError) throw requestError;
       }
     } catch (error) {
       await Promise.all(uploaded.map(({ bucket, path }) => supabase.storage.from(bucket).remove([path])));
@@ -349,6 +376,9 @@ const Auth = () => {
     }
 
     const signup: PendingSignupData = {
+      requestKey: crypto.randomUUID(),
+      fullName: signupName.trim(),
+      email: signupEmail.trim().toLowerCase(),
       userType,
       nationalId,
       governorate,

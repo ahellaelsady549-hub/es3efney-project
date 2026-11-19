@@ -220,6 +220,12 @@ export type Database = {
         }
         Relationships: []
       }
+      doctor_application_notifications: {
+        Row: { id: string; recipient_user_id: string; request_id: string | null; event_type: string; title: string; body: string; href: string; is_read: boolean; created_at: string }
+        Insert: { id?: string; recipient_user_id: string; request_id?: string | null; event_type: string; title: string; body: string; href: string; is_read?: boolean; created_at?: string }
+        Update: { id?: string; recipient_user_id?: string; request_id?: string | null; event_type?: string; title?: string; body?: string; href?: string; is_read?: boolean; created_at?: string }
+        Relationships: []
+      }
       community_posts: {
         Row: {
           category: string
@@ -446,6 +452,30 @@ export type Database = {
           updated_at?: string
           user_id?: string
           verification_status?: string | null
+        }
+        Relationships: []
+      }
+      doctor_verification_requests: {
+        Row: {
+          id: string; submission_key: string; doctor_id: string; user_id: string; applicant_name: string | null; applicant_email: string | null
+          national_id: string; governorate: string; home_address: string; id_front_path: string; id_back_path: string; ai_identity_review: string | null
+          specialty: string; bio: string | null; cv_url: string; cv_link: string | null; portfolio_url: string | null; ai_cv_review: string | null
+          workplace_type: string | null; workplace_name: string | null; workplace_address: string | null; status: string; rejection_reason: string | null
+          reviewed_at: string | null; created_at: string
+        }
+        Insert: {
+          id?: string; submission_key?: string; doctor_id: string; user_id: string; applicant_name?: string | null; applicant_email?: string | null
+          national_id: string; governorate: string; home_address: string; id_front_path: string; id_back_path: string; ai_identity_review?: string | null
+          specialty: string; bio?: string | null; cv_url: string; cv_link?: string | null; portfolio_url?: string | null; ai_cv_review?: string | null
+          workplace_type?: string | null; workplace_name?: string | null; workplace_address?: string | null; status?: string; rejection_reason?: string | null
+          reviewed_at?: string | null; created_at?: string
+        }
+        Update: {
+          id?: string; submission_key?: string; doctor_id?: string; user_id?: string; applicant_name?: string | null; applicant_email?: string | null
+          national_id?: string; governorate?: string; home_address?: string; id_front_path?: string; id_back_path?: string; ai_identity_review?: string | null
+          specialty?: string; bio?: string | null; cv_url?: string; cv_link?: string | null; portfolio_url?: string | null; ai_cv_review?: string | null
+          workplace_type?: string | null; workplace_name?: string | null; workplace_address?: string | null; status?: string; rejection_reason?: string | null
+          reviewed_at?: string | null; created_at?: string
         }
         Relationships: []
       }
@@ -1194,6 +1224,14 @@ export type Database = {
           specialty: string
           verification_status: string | null
         }[]
+      }
+      review_doctor_verification_request: {
+        Args: { _request_id: string; _approved: boolean; _reason?: string | null }
+        Returns: undefined
+      }
+      submit_doctor_rating: {
+        Args: { _doctor_id: string; _rating: number; _review?: string | null }
+        Returns: undefined
       }
       get_profile_public: {
         Args: { profile_user_id: string }

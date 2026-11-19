@@ -15,8 +15,10 @@ import { ChatBansAdmin } from '@/components/chat/ChatBansAdmin';
 import { medicalSpecialties } from '@/data/specialties';
 
 type Doc = {
-  id: string; full_name: string | null; email: string | null; specialty: string; bio: string | null;
-  cv_url: string | null; portfolio_url: string | null; verification_status: string | null; is_verified: boolean | null;
+  id: string; doctor_id: string; user_id: string; full_name: string | null; email: string | null; specialty: string; bio: string | null;
+  national_id: string; governorate: string; home_address: string; id_front_path: string; id_back_path: string; ai_identity_review: string | null;
+  cv_url: string | null; cv_link: string | null; portfolio_url: string | null; workplace_type: string | null; workplace_name: string | null; workplace_address: string | null;
+  verification_status: string | null; is_verified: boolean | null; status: string;
   ai_cv_review: string | null; rejection_reason: string | null; reviewed_at: string | null; created_at: string;
 };
 
@@ -61,22 +63,28 @@ const AdminPage = () => {
 
   const load = useCallback(async () => {
     const [doctorResult, identityResult] = await Promise.all([
-      supabase.rpc('get_doctor_requests'),
+      supabase.from('doctor_verification_requests').select('*').order('created_at', { ascending: false }),
       supabase.from('identity_applications').select('*').order('created_at', { ascending: false }),
     ]);
     const { data, error } = doctorResult;
     if (error) {
       console.error('Could not load doctor verification requests:', error);
-      const missingRpc = error.code === 'PGRST202' || /get_doctor_requests/i.test(error.message);
+      const missingRpc = error.code === 'PGRST205' || /doctor_verification_requests/i.test(error.message);
       if (!doctorRpcErrorShown.current) {
         doctorRpcErrorShown.current = true;
         toast.error(missingRpc
-          ? L('قاعدة البيانات تحتاج ترحيل طلبات توثيق الطبيب: شغّل ملف 20261119120000_doctor_verification_admin_queue.sql كاملًا.', 'Doctor verification setup is missing. Run the full 20261119120000_doctor_verification_admin_queue.sql migration.')
+          ? L('قاعدة البيانات تحتاج ترحيل سجل طلبات توثيق الطبيب: شغّل ملف 20261119180000_doctor_verification_history_notifications_rating.sql كاملًا.', 'Doctor verification history is missing. Run the full 20261119180000_doctor_verification_history_notifications_rating.sql migration.')
           : error.message);
       }
     } else {
       doctorRpcErrorShown.current = false;
-      setDocs((data ?? []) as Doc[]);
+      setDocs(((data ?? []) as Array<Record<string, unknown>>).map((request) => ({
+        ...request,
+        full_name: request.applicant_name,
+        email: request.applicant_email,
+        verification_status: request.status,
+        is_verified: request.status === 'approved',
+      })) as unknown as Doc[]);
     }
 
     if (identityResult.error) {
@@ -190,13 +198,12 @@ const AdminPage = () => {
   const decide = async (id: string, approve: boolean) => {
     const reason = (reasons[id] ?? '').trim();
     if (!approve && reason.length < 5) return toast.error(L('اكتب سبب الرفض', 'Write the rejection reason'));
-    const { error } = await supabase.from('doctors').update({
-      is_verified: approve,
-      verification_status: approve ? 'approved' : 'rejected',
-      rejection_reason: approve ? null : reason,
-      reviewed_at: new Date().toISOString(),
-    }).eq('id', id);
-    if (error) return toast.error(L('تعذّر الحفظ', 'Could not save'));
+    const { error } = await supabase.rpc('review_doctor_verification_request', {
+      _request_id: id,
+      _approved: approve,
+      _reason: approve ? null : reason,
+    });
+    if (error) return toast.error(`${L('تعذّر الحفظ', 'Could not save')}: ${error.message}`);
     toast.success(approve ? L('تمت الموافقة', 'Approved') : L('تم الرفض', 'Rejected'));
     load();
   };
@@ -205,8 +212,8 @@ const AdminPage = () => {
   if (!user) return <Navigate to="/auth" replace />;
   if (isAdmin === false) return <Navigate to="/" replace />;
 
-  const pending = docs.filter((d) => !d.is_verified && d.verification_status !== 'rejected');
-  const answered = docs.filter((d) => d.is_verified || d.verification_status === 'rejected');
+  const pending = docs.filter((d) => d.status === 'pending');
+  const answered = docs.filter((d) => d.status === 'approved' || d.status === 'rejected');
   const pendingIdentity = identityApplications.filter((application) => application.status === 'pending');
   const answeredIdentity = identityApplications.filter((application) => application.status !== 'pending');
 
@@ -261,31 +268,30 @@ const AdminPage = () => {
     <Card key={d.id}>
       <CardHeader className="pb-2">
         <CardTitle className="flex flex-wrap items-center gap-2 text-lg">
-          {d.full_name || d.email}
+          {d.full_name || d.email || d.user_id}
           <Badge variant={d.is_verified ? 'default' : d.verification_status === 'rejected' ? 'destructive' : 'secondary'}>
             {d.is_verified ? L('موافق عليه', 'Approved') : d.verification_status === 'rejected' ? L('مرفوض', 'Rejected') : L('قيد المراجعة', 'Pending')}
           </Badge>
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <p><b>{L('التخصص', 'Specialty')}:</b> {d.specialty}</p>
+        <p><b>{L('التخصص', 'Specialty')}:</b> {medicalSpecialties.find((specialty) => specialty.value === d.specialty)?.[L('labelAr', 'labelEn') as 'labelAr' | 'labelEn'] || d.specialty}</p>
         {d.email && <p><b>{L('البريد', 'Email')}:</b> {d.email}</p>}
         {d.bio && <p className="text-muted-foreground">{d.bio}</p>}
-        {identityApplications.filter((application) => application.professional?.id === d.id).map((application) => (
-          <div key={application.id} className="space-y-3 rounded-md border p-3">
+        <div className="space-y-3 rounded-md border p-3">
             <p className="font-semibold">{L('بيانات التوثيق المقدمة', 'Submitted verification details')}</p>
-            <p><b>{L('الرقم القومي المكتوب', 'Entered national ID')}:</b> {application.national_id}</p>
-            <p><b>{L('المحافظة', 'Governorate')}:</b> {application.governorate}</p>
-            <p><b>{L('عنوان السكن', 'Home address')}:</b> {application.home_address}</p>
-            {application.professional?.workplace_name && <p><b>{application.professional.workplace_type === 'clinic' ? L('جهة العمل: عيادة', 'Workplace: Clinic') : L('جهة العمل: مستشفى', 'Workplace: Hospital')}:</b> {application.professional.workplace_name}</p>}
-            {application.professional?.workplace_address && <p><b>{L('عنوان جهة العمل', 'Workplace address')}:</b> {application.professional.workplace_address}</p>}
+            <p><b>{L('الرقم القومي', 'National ID')}:</b> {d.national_id}</p>
+            <p><b>{L('المحافظة', 'Governorate')}:</b> {d.governorate}</p>
+            <p><b>{L('عنوان السكن', 'Home address')}:</b> {d.home_address}</p>
+            {d.workplace_name && <p><b>{d.workplace_type === 'clinic' ? L('جهة العمل: عيادة', 'Workplace: Clinic') : L('جهة العمل: مستشفى', 'Workplace: Hospital')}:</b> {d.workplace_name}</p>}
+            {d.workplace_address && <p><b>{L('عنوان جهة العمل', 'Workplace address')}:</b> {d.workplace_address}</p>}
             <div className="flex flex-wrap gap-2">
-              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_front_path)}>{L('عرض وجه البطاقة', 'View ID front')}</Button>
-              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_back_path)}>{L('عرض ظهر البطاقة', 'View ID back')}</Button>
-              {application.professional?.cv_link && <Button size="lg" variant="outline" onClick={() => openExternalUrl(application.professional!.cv_link!)}><LinkIcon className="h-4 w-4 me-1" />{L('رابط السيرة الذاتية', 'CV link')}</Button>}
+              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(d.id_front_path)}>{L('عرض وجه البطاقة', 'View ID front')}</Button>
+              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(d.id_back_path)}>{L('عرض ظهر البطاقة', 'View ID back')}</Button>
+              {d.cv_link && <Button size="lg" variant="outline" onClick={() => openExternalUrl(d.cv_link!)}><LinkIcon className="h-4 w-4 me-1" />{L('رابط السيرة الذاتية', 'CV link')}</Button>}
             </div>
-          </div>
-        ))}
+            {d.ai_identity_review && <p className="whitespace-pre-wrap text-muted-foreground"><b>{L('مراجعة الهوية آلياً', 'AI identity review')}:</b> {d.ai_identity_review}</p>}
+        </div>
         <div className="rounded-md bg-muted p-3">
           <b>{L('تقرير الفحص المبدئي', 'Preliminary review report')}:</b>
           <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{d.ai_cv_review || L('لا يوجد تقرير', 'No report')}</p>
@@ -294,7 +300,7 @@ const AdminPage = () => {
         {d.reviewed_at && <p className="text-muted-foreground">{L('تاريخ الرد', 'Reviewed')}: {new Date(d.reviewed_at).toLocaleString()}</p>}
         <div className="flex flex-wrap gap-2">
           {d.cv_url && <Button size="lg" variant="outline" onClick={() => openCv(d.cv_url!)}><FileText className="h-4 w-4 me-1" />{L('عرض السيرة الذاتية', 'View CV')}</Button>}
-          {d.portfolio_url && <Button size="lg" variant="outline" onClick={() => window.open(d.portfolio_url!, '_blank')}><LinkIcon className="h-4 w-4 me-1" />{L('الرابط الإضافي', 'Extra link')}</Button>}
+        {d.portfolio_url && <Button size="lg" variant="outline" onClick={() => openExternalUrl(d.portfolio_url!)}><LinkIcon className="h-4 w-4 me-1" />{L('الرابط الإضافي', 'Extra link')}</Button>}
         </div>
         {actions && (
           <>

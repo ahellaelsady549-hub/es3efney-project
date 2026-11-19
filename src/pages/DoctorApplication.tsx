@@ -20,8 +20,25 @@ interface DoctorApplicationData {
   specialty: string;
   bio: string | null;
   cv_url: string | null;
+  cv_link: string | null;
+  portfolio_url: string | null;
+  ai_cv_review: string | null;
+  workplace_type: string | null;
+  workplace_name: string | null;
+  workplace_address: string | null;
+  rejection_reason: string | null;
+  reviewed_at: string | null;
   is_verified: boolean | null;
   verification_status: string | null;
+}
+
+interface IdentitySnapshot {
+  national_id: string;
+  governorate: string;
+  home_address: string;
+  id_front_path: string;
+  id_back_path: string;
+  ai_review: string | null;
 }
 
 const DoctorApplication = () => {
@@ -30,6 +47,7 @@ const DoctorApplication = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [application, setApplication] = useState<DoctorApplicationData | null>(null);
+  const [identitySnapshot, setIdentitySnapshot] = useState<IdentitySnapshot | null>(null);
   const [specialty, setSpecialty] = useState('');
   const [bio, setBio] = useState('');
   const [cvFile, setCvFile] = useState<File | null>(null);
@@ -46,8 +64,17 @@ const DoctorApplication = () => {
     const fetchApplication = async () => {
       const { data, error } = await supabase
         .from('doctors')
-        .select('id, specialty, bio, cv_url, is_verified, verification_status')
+        .select('id, specialty, bio, cv_url, cv_link, portfolio_url, ai_cv_review, workplace_type, workplace_name, workplace_address, rejection_reason, reviewed_at, is_verified, verification_status')
         .eq('user_id', user.id)
+        .maybeSingle();
+
+      const { data: identity, error: identityError } = await supabase
+        .from('identity_applications')
+        .select('national_id, governorate, home_address, id_front_path, id_back_path, ai_review')
+        .eq('user_id', user.id)
+        .eq('account_type', 'doctor')
+        .order('created_at', { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (error) {
@@ -62,6 +89,11 @@ const DoctorApplication = () => {
         setSpecialty(data.specialty);
         setBio(data.bio || '');
       }
+      if (identityError) {
+        console.error('Error loading doctor identity details:', identityError);
+      } else if (identity) {
+        setIdentitySnapshot(identity);
+      }
       setIsLoading(false);
     };
 
@@ -71,6 +103,15 @@ const DoctorApplication = () => {
   const submitApplication = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!user || application?.is_verified) return;
+
+    if (!identitySnapshot) {
+      toast({
+        title: L('بيانات التوثيق غير مكتملة', 'Verification details are missing'),
+        description: L('لا يوجد طلب هوية مرتبط بحسابك. تواصل مع الدعم لإكماله قبل إعادة إرسال توثيق الطبيب.', 'No identity application is linked to your account. Contact support to complete it before resubmitting doctor verification.'),
+        variant: 'destructive',
+      });
+      return;
+    }
 
     if (!specialty || (!cvFile && !application?.cv_url)) {
       toast({
@@ -84,11 +125,11 @@ const DoctorApplication = () => {
     if (cvFile && (
       !cvFile.name.toLowerCase().endsWith('.pdf')
       || (cvFile.type !== '' && cvFile.type !== 'application/pdf')
-      || cvFile.size > 10 * 1024 * 1024
+      || cvFile.size > 300 * 1024 * 1024
     )) {
       toast({
         title: L('ملف غير صالح', 'Invalid file'),
-        description: L('ارفع ملف PDF لا يتجاوز حجمه 10 ميجابايت', 'Upload a PDF file no larger than 10 MB'),
+        description: L('ارفع ملف PDF لا يتجاوز حجمه 300 ميجابايت', 'Upload a PDF file no larger than 300 MB'),
         variant: 'destructive',
       });
       return;
@@ -113,13 +154,46 @@ const DoctorApplication = () => {
           specialty,
           bio: bio.trim() || null,
           cv_url: uploadedPath || application?.cv_url || null,
+          cv_link: application?.cv_link || null,
+          portfolio_url: application?.portfolio_url || null,
+          ai_cv_review: application?.ai_cv_review || null,
+          workplace_type: application?.workplace_type || null,
+          workplace_name: application?.workplace_name || null,
+          workplace_address: application?.workplace_address || null,
           is_verified: false,
           verification_status: 'pending',
+          rejection_reason: null,
+          reviewed_at: null,
         }, { onConflict: 'user_id' })
-        .select('id, specialty, bio, cv_url, is_verified, verification_status')
+        .select('id, specialty, bio, cv_url, cv_link, portfolio_url, ai_cv_review, workplace_type, workplace_name, workplace_address, rejection_reason, reviewed_at, is_verified, verification_status')
         .single();
 
       if (error) throw error;
+
+      const { error: requestError } = await supabase.from('doctor_verification_requests').insert({
+        submission_key: crypto.randomUUID(),
+        doctor_id: data.id,
+        user_id: user.id,
+        applicant_name: user.user_metadata?.full_name || null,
+        applicant_email: user.email || null,
+        national_id: identitySnapshot.national_id,
+        governorate: identitySnapshot.governorate,
+        home_address: identitySnapshot.home_address,
+        id_front_path: identitySnapshot.id_front_path,
+        id_back_path: identitySnapshot.id_back_path,
+        ai_identity_review: identitySnapshot.ai_review,
+        specialty: data.specialty,
+        bio: data.bio,
+        cv_url: data.cv_url!,
+        cv_link: data.cv_link,
+        portfolio_url: data.portfolio_url,
+        ai_cv_review: data.ai_cv_review,
+        workplace_type: data.workplace_type,
+        workplace_name: data.workplace_name,
+        workplace_address: data.workplace_address,
+        status: 'pending',
+      });
+      if (requestError) throw requestError;
 
       setApplication(data);
       setCvFile(null);
@@ -179,6 +253,9 @@ const DoctorApplication = () => {
                 {application?.cv_url && (
                   <p className="mt-1 text-sm text-muted-foreground">{L('تم حفظ ملف السيرة الذاتية بشكل خاص.', 'Your CV is stored privately.')}</p>
                 )}
+                {status === 'rejected' && application?.rejection_reason && (
+                  <p className="mt-2 text-sm text-destructive"><b>{L('سبب الرفض:', 'Reason:')}</b> {application.rejection_reason}</p>
+                )}
               </div>
             </div>
 
@@ -200,7 +277,7 @@ const DoctorApplication = () => {
                   <Textarea id="doctor-bio" value={bio} onChange={(event) => setBio(event.target.value)} maxLength={1000} rows={4} />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="doctor-cv">{L('السيرة الذاتية (PDF، حتى 10 ميجابايت)', 'CV (PDF, up to 10 MB)')}</Label>
+                  <Label htmlFor="doctor-cv">{L('السيرة الذاتية (PDF، حتى 300 ميجابايت)', 'CV (PDF, up to 300 MB)')}</Label>
                   <Input
                     id="doctor-cv"
                     type="file"
@@ -211,7 +288,7 @@ const DoctorApplication = () => {
                 </div>
                 <Button type="submit" className="w-full" disabled={isSaving}>
                   {isSaving ? <Loader2 className="ms-2 h-4 w-4 animate-spin" /> : <Upload className="ms-2 h-4 w-4" />}
-                  {status === 'rejected' ? L('إعادة إرسال الطلب', 'Resubmit application') : L('إرسال للمراجعة', 'Submit for review')}
+                  {status === 'not_submitted' ? L('إرسال للمراجعة', 'Submit for review') : L('إعادة إرسال الطلب', 'Resubmit application')}
                 </Button>
               </form>
             )}
