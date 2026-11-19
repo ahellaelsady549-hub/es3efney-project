@@ -36,6 +36,7 @@ type IdentityApplication = {
   created_at: string;
   profile?: { full_name: string | null; email: string | null };
   professional?: {
+    id: string;
     specialty: string;
     bio: string | null;
     cv_url: string | null;
@@ -270,6 +271,21 @@ const AdminPage = () => {
         <p><b>{L('التخصص', 'Specialty')}:</b> {d.specialty}</p>
         {d.email && <p><b>{L('البريد', 'Email')}:</b> {d.email}</p>}
         {d.bio && <p className="text-muted-foreground">{d.bio}</p>}
+        {identityApplications.filter((application) => application.professional?.id === d.id).map((application) => (
+          <div key={application.id} className="space-y-3 rounded-md border p-3">
+            <p className="font-semibold">{L('بيانات التوثيق المقدمة', 'Submitted verification details')}</p>
+            <p><b>{L('الرقم القومي المكتوب', 'Entered national ID')}:</b> {application.national_id}</p>
+            <p><b>{L('المحافظة', 'Governorate')}:</b> {application.governorate}</p>
+            <p><b>{L('عنوان السكن', 'Home address')}:</b> {application.home_address}</p>
+            {application.professional?.workplace_name && <p><b>{application.professional.workplace_type === 'clinic' ? L('جهة العمل: عيادة', 'Workplace: Clinic') : L('جهة العمل: مستشفى', 'Workplace: Hospital')}:</b> {application.professional.workplace_name}</p>}
+            {application.professional?.workplace_address && <p><b>{L('عنوان جهة العمل', 'Workplace address')}:</b> {application.professional.workplace_address}</p>}
+            <div className="flex flex-wrap gap-2">
+              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_front_path)}>{L('عرض وجه البطاقة', 'View ID front')}</Button>
+              <Button size="lg" variant="outline" onClick={() => openIdentityDocument(application.id_back_path)}>{L('عرض ظهر البطاقة', 'View ID back')}</Button>
+              {application.professional?.cv_link && <Button size="lg" variant="outline" onClick={() => openExternalUrl(application.professional!.cv_link!)}><LinkIcon className="h-4 w-4 me-1" />{L('رابط السيرة الذاتية', 'CV link')}</Button>}
+            </div>
+          </div>
+        ))}
         <div className="rounded-md bg-muted p-3">
           <b>{L('تقرير الفحص المبدئي', 'Preliminary review report')}:</b>
           <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{d.ai_cv_review || L('لا يوجد تقرير', 'No report')}</p>
