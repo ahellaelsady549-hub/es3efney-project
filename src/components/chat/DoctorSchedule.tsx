@@ -96,8 +96,14 @@ export function DoctorSchedule({ doctorId }: { doctorId: string }) {
           <select aria-label={L('يوم العمل', 'Work day')} className="h-11 rounded-md border border-input bg-background px-3" value={weekday} onChange={(e) => setWeekday(Number(e.target.value))}>
             {DAYS_AR.map((day, i) => <option key={i} value={i}>{L(day, DAYS_EN[i])}</option>)}
           </select>
-          <Input aria-label={L('من الساعة', 'Start time')} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="h-11" />
-          <Input aria-label={L('إلى الساعة', 'End time')} type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="h-11" />
+          <div className="flex flex-col gap-1">
+            <Input aria-label={L('ميعاد بدء العمل', 'Work start time')} type="time" value={start} onChange={(e) => setStart(e.target.value)} className="h-11" />
+            <span className="px-1 text-xs text-muted-foreground">{L('ميعاد بدء العمل', 'Work start time')}</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <Input aria-label={L('ميعاد نهاية العمل', 'Work end time')} type="time" value={end} onChange={(e) => setEnd(e.target.value)} className="h-11" />
+            <span className="px-1 text-xs text-muted-foreground">{L('ميعاد نهاية العمل', 'Work end time')}</span>
+          </div>
           <Button onClick={() => void add()} disabled={saving} className="h-11">{L('إضافة ساعات', 'Add hours')}</Button>
         </div>
         {rows.length === 0 ? <p className="text-sm text-muted-foreground">{L('لم تحدد ساعات العمل بعد؛ لن يستطيع المرضى الحجز.', 'No working hours set. Patients cannot book yet.')}</p> : rows.map((row) => (
