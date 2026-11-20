@@ -226,6 +226,12 @@ export type Database = {
         Update: { id?: string; recipient_user_id?: string; request_id?: string | null; event_type?: string; title?: string; body?: string; href?: string; is_read?: boolean; created_at?: string }
         Relationships: []
       }
+      appointment_notifications: {
+        Row: { id: string; booking_id: string; conversation_id: string; recipient_user_id: string; event_type: string; title: string; body: string; href: string; is_read: boolean; created_at: string }
+        Insert: { id?: string; booking_id: string; conversation_id: string; recipient_user_id: string; event_type: string; title: string; body: string; href: string; is_read?: boolean; created_at?: string }
+        Update: { id?: string; booking_id?: string; conversation_id?: string; recipient_user_id?: string; event_type?: string; title?: string; body?: string; href?: string; is_read?: boolean; created_at?: string }
+        Relationships: []
+      }
       community_posts: {
         Row: {
           category: string

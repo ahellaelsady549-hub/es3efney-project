@@ -41,6 +41,18 @@ type ApplicationNotification = {
   created_at: string;
 };
 
+type AppointmentNotification = {
+  id: string;
+  recipient_user_id: string;
+  booking_id: string;
+  conversation_id: string;
+  title: string;
+  body: string;
+  href: string;
+  is_read: boolean;
+  created_at: string;
+};
+
 type Item =
   | { kind: 'section'; id: string; labelKey: string; icon: typeof Home }
   | { kind: 'route'; to: string; labelKey: string; icon: typeof Home; auth?: boolean };
@@ -77,25 +89,30 @@ export const Header = () => {
   const [open, setOpen] = useState(false);
   const [chatNotifications, setChatNotifications] = useState<ChatNotification[]>([]);
   const [applicationNotifications, setApplicationNotifications] = useState<ApplicationNotification[]>([]);
+  const [appointmentNotifications, setAppointmentNotifications] = useState<AppointmentNotification[]>([]);
   const pendingSection = useRef<string | null>(null);
 
   useEffect(() => {
     if (!userId) {
       setChatNotifications([]);
       setApplicationNotifications([]);
+      setAppointmentNotifications([]);
       return;
     }
 
     let active = true;
     const loadNotifications = async () => {
-      const [chatResult, applicationResult] = await Promise.all([
+      const [chatResult, applicationResult, appointmentResult] = await Promise.all([
         supabase.from('chat_notifications').select('*').eq('recipient_user_id', userId).order('created_at', { ascending: false }).limit(20),
         supabase.from('doctor_application_notifications').select('*').eq('recipient_user_id', userId).order('created_at', { ascending: false }).limit(20),
+        supabase.from('appointment_notifications').select('*').eq('recipient_user_id', userId).order('created_at', { ascending: false }).limit(20),
       ]);
       if (active && !chatResult.error) setChatNotifications((chatResult.data ?? []) as ChatNotification[]);
       if (active && !applicationResult.error) setApplicationNotifications((applicationResult.data ?? []) as ApplicationNotification[]);
+      if (active && !appointmentResult.error) setAppointmentNotifications((appointmentResult.data ?? []) as AppointmentNotification[]);
       if (chatResult.error) console.error('Could not load chat notifications:', chatResult.error);
       if (applicationResult.error) console.error('Could not load doctor application notifications:', applicationResult.error);
+      if (appointmentResult.error) console.error('Could not load appointment notifications:', appointmentResult.error);
     };
 
     void loadNotifications();
@@ -137,6 +154,24 @@ export const Header = () => {
           systemNotification.onclick = () => { window.focus(); openApplication(); systemNotification.close(); };
         }
       })
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'appointment_notifications',
+        filter: `recipient_user_id=eq.${userId}`,
+      }, (payload) => {
+        const notification = payload.new as AppointmentNotification;
+        setAppointmentNotifications((current) => [notification, ...current.filter((item) => item.id !== notification.id)].slice(0, 20));
+        const openSession = () => navigate(notification.href || `/chat/${notification.conversation_id}`);
+        sonnerToast(notification.title, {
+          description: notification.body,
+          action: { label: L('دخول الجلسة', 'Join session'), onClick: openSession },
+        });
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const systemNotification = new Notification(notification.title, { body: notification.body });
+          systemNotification.onclick = () => { window.focus(); openSession(); systemNotification.close(); };
+        }
+      })
       .subscribe();
 
     return () => {
@@ -161,6 +196,15 @@ export const Header = () => {
       setApplicationNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
     }
     navigate(notification.href);
+  };
+
+  const openAppointmentNotification = async (notification: AppointmentNotification) => {
+    if (!notification.is_read) {
+      const { error } = await supabase.from('appointment_notifications').update({ is_read: true }).eq('id', notification.id);
+      if (error) sonnerToast.error(L('تعذر تحديث الإشعار', 'Could not update notification'));
+      setAppointmentNotifications((current) => current.map((item) => item.id === notification.id ? { ...item, is_read: true } : item));
+    }
+    navigate(notification.href || `/chat/${notification.conversation_id}`);
   };
 
   /** Home-page sections are reachable from every page. */
@@ -190,7 +234,7 @@ export const Header = () => {
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="relative rounded-full" aria-label={L('الإشعارات', 'Notifications')}>
                     <Bell className="h-5 w-5" />
-                    {(chatNotifications.some((notification) => !notification.is_read) || applicationNotifications.some((notification) => !notification.is_read)) && (
+                    {(chatNotifications.some((notification) => !notification.is_read) || applicationNotifications.some((notification) => !notification.is_read) || appointmentNotifications.some((notification) => !notification.is_read)) && (
                       <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-background" />
                     )}
                   </Button>
@@ -198,6 +242,18 @@ export const Header = () => {
                 <DropdownMenuContent align="end" className="max-h-[70vh] w-80 max-w-[90vw] overflow-y-auto">
                   <DropdownMenuLabel>{L('الإشعارات', 'Notifications')}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {appointmentNotifications.map((notification) => (
+                    <DropdownMenuItem
+                      key={`appointment-${notification.id}`}
+                      onSelect={() => void openAppointmentNotification(notification)}
+                      className={cn('block cursor-pointer whitespace-normal py-2', !notification.is_read && 'bg-primary/5')}
+                    >
+                      <span className="block font-medium">{notification.title}</span>
+                      <span className="block text-xs text-muted-foreground">{notification.body}</span>
+                      <span className="block text-[11px] font-semibold text-primary">{L('اضغط للدخول للجلسة', 'Tap to join session')}</span>
+                      <span className="block text-[11px] text-muted-foreground">{new Date(notification.created_at).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US')}</span>
+                    </DropdownMenuItem>
+                  ))}
                   {applicationNotifications.map((notification) => (
                     <DropdownMenuItem
                       key={`application-${notification.id}`}
@@ -220,7 +276,7 @@ export const Header = () => {
                       <span className="block text-[11px] text-muted-foreground">{new Date(notification.created_at).toLocaleString(language === 'ar' ? 'ar-EG' : 'en-US')}</span>
                     </DropdownMenuItem>
                   ))}
-                  {chatNotifications.length === 0 && applicationNotifications.length === 0 && (
+                  {chatNotifications.length === 0 && applicationNotifications.length === 0 && appointmentNotifications.length === 0 && (
                     <DropdownMenuItem disabled>{L('لا توجد إشعارات جديدة', 'No notifications')}</DropdownMenuItem>
                   )}
                 </DropdownMenuContent>

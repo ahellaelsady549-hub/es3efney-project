@@ -68,21 +68,57 @@ export const ReminderScheduler = () => {
       try {
         const now = new Date();
         const preferences = getNotificationPreferences();
-        const [{ data: medications, error: medicationError }, { data: appointments, error: appointmentError }] = await Promise.all([
+        const [medicationResult, patientAppointmentResult, doctorResult] = await Promise.all([
           supabase.from('user_medications')
             .select('id,name,dosage,time')
             .eq('user_id', user.id)
             .eq('reminder_enabled', true),
           supabase.from('doctor_bookings')
-            .select('id,starts_at')
+            .select('id,doctor_id,user_id,starts_at')
             .eq('user_id', user.id)
             .eq('status', 'confirmed')
             .gte('starts_at', new Date(now.getTime() - APPOINTMENT_GRACE_PERIOD_MS).toISOString())
             .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString()),
+          supabase.from('doctors')
+            .select('id')
+            .eq('user_id', user.id)
+            .maybeSingle(),
         ]);
-        if (medicationError) throw medicationError;
-        if (appointmentError) throw appointmentError;
+        if (medicationResult.error) throw medicationResult.error;
+        if (patientAppointmentResult.error) throw patientAppointmentResult.error;
+        if (doctorResult.error) throw doctorResult.error;
+
+        const doctorAppointmentResult = doctorResult.data
+          ? await supabase.from('doctor_bookings')
+              .select('id,doctor_id,user_id,starts_at')
+              .eq('doctor_id', doctorResult.data.id)
+              .eq('status', 'confirmed')
+              .gte('starts_at', new Date(now.getTime() - APPOINTMENT_GRACE_PERIOD_MS).toISOString())
+              .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString())
+          : { data: [], error: null };
+        if (doctorAppointmentResult.error) throw doctorAppointmentResult.error;
         if (!active) return;
+
+        const medications = medicationResult.data;
+        const appointments = [...new Map(
+          [...(patientAppointmentResult.data ?? []), ...(doctorAppointmentResult.data ?? [])]
+            .map((appointment) => [appointment.id, appointment] as const),
+        ).values()];
+        const conversationLinks = new Map<string, string>();
+        const getAppointmentUrl = async (appointment: (typeof appointments)[number]) => {
+          const key = `${appointment.user_id}:${appointment.doctor_id}`;
+          const cached = conversationLinks.get(key);
+          if (cached) return cached;
+          const { data, error } = await supabase.from('conversations')
+            .select('id')
+            .eq('user_id', appointment.user_id)
+            .eq('doctor_id', appointment.doctor_id)
+            .maybeSingle();
+          if (error) console.error('Could not find the appointment chat:', error);
+          const url = data?.id ? `/chat/${data.id}` : '/dashboard?tab=appointments';
+          conversationLinks.set(key, url);
+          return url;
+        };
 
         if (preferences.medicationReminders) {
           for (const medication of medications ?? []) {
@@ -126,10 +162,11 @@ export const ReminderScheduler = () => {
               const title = stage.label === 'now'
                 ? L('حان موعد جلستك الطبية', 'Your medical appointment is now')
                 : L('تذكير بموعد الطبيب', 'Doctor appointment reminder');
+              const chatUrl = await getAppointmentUrl(appointment);
               const body = stage.label === 'now'
                 ? L('موعد جلستك الطبية الآن.', 'Your medical appointment is starting now.')
                 : L(`موعد الطبيب بعد ${stage.label === '1h' ? 'ساعة' : 'نصف ساعة'}.`, `Your doctor appointment is in ${stage.label === '1h' ? 'one hour' : '30 minutes'}.`);
-              await showReminderNotification(title, body, reminderKey);
+              await showReminderNotification(title, body, reminderKey, chatUrl);
               void stage.sound().catch((error: unknown) => {
                 console.error('Unable to play the appointment reminder sound:', error);
               });

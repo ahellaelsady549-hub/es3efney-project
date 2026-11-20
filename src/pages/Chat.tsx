@@ -21,8 +21,6 @@ import {
   MicOff,
   AlertTriangle,
   Shield,
-  Pause,
-  Play,
   Reply,
   Smile,
   X
@@ -66,10 +64,21 @@ const getReadableError = (error: unknown) => {
   return 'Unknown error';
 };
 
-const formatAudioTime = (seconds: number) => {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
-  const wholeSeconds = Math.floor(seconds);
-  return `${Math.floor(wholeSeconds / 60)}:${String(wholeSeconds % 60).padStart(2, '0')}`;
+const getAudioMimeType = (fileType: string | null, fileUrl: string | null) => {
+  const mimeType = fileType?.toLowerCase() || '';
+  if (mimeType.startsWith('audio/')) return mimeType;
+  const extension = fileUrl?.match(/\.([a-z0-9]+)(?:$|[?#])/i)?.[1]?.toLowerCase();
+  const mimeTypes: Record<string, string> = {
+    aac: 'audio/aac',
+    '3gp': 'audio/3gpp',
+    m4a: 'audio/mp4',
+    mp3: 'audio/mpeg',
+    mp4: 'audio/mp4',
+    ogg: 'audio/ogg',
+    wav: 'audio/wav',
+    webm: 'audio/webm',
+  };
+  return (extension && mimeTypes[extension]) || 'audio/wav';
 };
 
 const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
@@ -127,94 +136,27 @@ const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
   }
 };
 
-const VoiceMessagePlayer = ({ src, isOwn, L, onError }: { src: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const waveformRef = useRef<HTMLButtonElement>(null);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [playbackError, setPlaybackError] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const progress = duration ? currentTime / duration : 0;
-
-  const togglePlayback = async () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      try {
-        await audio.play();
-      } catch {
-        setPlaybackError(true);
-        onError();
-      }
-    } else audio.pause();
-  };
-
-  const seek = (event: React.MouseEvent<HTMLButtonElement>) => {
-    const audio = audioRef.current;
-    const bounds = waveformRef.current?.getBoundingClientRect();
-    if (!audio || !bounds || !Number.isFinite(audio.duration)) return;
-    const offset = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
-    audio.currentTime = offset * audio.duration;
-  };
-
-  return (
-    <div className={`flex min-w-[240px] items-center gap-3 rounded-2xl p-2.5 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
-      <audio
-        ref={audioRef}
-        src={src}
-        preload="metadata"
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
-        onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-        onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
-        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
-        onError={() => { setPlaybackError(true); onError(); }}
-        className="sr-only"
-      />
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        onClick={() => void togglePlayback()}
-        aria-label={isPlaying ? L('إيقاف مؤقت', 'Pause voice message') : L('تشغيل الرسالة الصوتية', 'Play voice message')}
-        className={`h-10 w-10 shrink-0 rounded-full ${isOwn ? 'text-current hover:bg-black/10' : 'text-primary'}`}
-      >
-        {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
-      </Button>
-      <div className="min-w-0 flex-1">
-        <button
-          ref={waveformRef}
-          type="button"
-          onClick={seek}
-          aria-label={L('تقديم أو ترجيع التسجيل الصوتي', 'Seek in voice message')}
-          className="flex h-8 w-full items-center gap-[3px] overflow-hidden"
-        >
-          {Array.from({ length: 32 }, (_, index) => {
-            const height = 7 + ((index * 13 + 5) % 19);
-            return <span key={index} className={`min-w-[2px] flex-1 rounded-full ${index / 32 <= progress ? 'bg-current opacity-90' : 'bg-current opacity-30'}`} style={{ height }} />;
-          })}
-        </button>
-        <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] tabular-nums opacity-75">
-          <span>{formatAudioTime(currentTime)}</span>
-          <button
-            type="button"
-            onClick={() => {
-              const nextRate = playbackRate >= 2 ? 1 : playbackRate + 0.5;
-              setPlaybackRate(nextRate);
-              if (audioRef.current) audioRef.current.playbackRate = nextRate;
-            }}
-            className="rounded px-1 hover:bg-black/10"
-            aria-label={L('تغيير سرعة التشغيل', 'Change playback speed')}
-          >{playbackRate}×</button>
-          <span>{duration ? formatAudioTime(duration) : '--:--'}</span>
-        </div>
-      </div>
-      {playbackError && <span className="sr-only" role="alert">{L('تعذر تشغيل التسجيل. جرّب إعادة تحميل المرفق.', 'Could not play this recording. Try reloading the attachment.')}</span>}
+const VoiceMessagePlayer = ({ src, mimeType, isOwn, L, onError }: { src: string; mimeType: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => (
+  <div className={`flex min-w-[240px] items-center gap-3 rounded-2xl p-2.5 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
+    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${isOwn ? 'bg-black/10' : 'bg-primary/10 text-primary'}`}>
+      <Mic className="h-5 w-5" />
     </div>
-  );
-};
+    <div className="min-w-0 flex-1">
+      <div className="mb-1 text-xs font-semibold">{L('رسالة صوتية', 'Voice message')}</div>
+      <audio
+        controls
+        preload="auto"
+        onError={(event) => {
+          console.error('Voice message playback failed:', event.currentTarget.error?.code, event.currentTarget.error?.message);
+          onError();
+        }}
+        className="h-10 w-full max-w-[320px]"
+      >
+        <source src={src} type={mimeType} />
+      </audio>
+    </div>
+  </div>
+);
 
 const Chat = () => {
   const { id: conversationId } = useParams();
@@ -741,8 +683,9 @@ const Chat = () => {
               groups[reaction.emoji] = group;
               return groups;
             }, {});
-            const isAudioMessage = message.file_type?.startsWith('audio/')
-              || /voice-[^/]*\.(m4a|mp4|webm|ogg|mp3|wav)$/i.test(message.file_url || '');
+            const audioType = message.file_type?.toLowerCase() || '';
+            const isAudioMessage = audioType.startsWith('audio/')
+              || /\.(m4a|mp4|webm|ogg|mp3|wav|aac|3gp)(?:$|[?#])/i.test(message.file_url || '');
             return (
               <div
                 key={message.id}
@@ -784,7 +727,7 @@ const Chat = () => {
                         <button type="button" onClick={() => void retrySignedFile(message)} className="text-xs underline opacity-80">
                           {fileError ? L('تعذر تحميل المرفق — حاول مرة أخرى', 'Attachment failed — retry') : L('جاري تحميل المرفق...', 'Loading attachment...')}
                         </button>
-                      ) : message.file_type?.startsWith('image/') ? (
+                      ) : message.file_type?.toLowerCase().startsWith('image/') ? (
                         <a href={fileUrl} target="_blank" rel="noopener noreferrer" className="block">
                           <img
                             src={fileUrl}
@@ -793,7 +736,7 @@ const Chat = () => {
                             className="max-h-80 max-w-[min(70vw,360px)] rounded-xl object-contain"
                           />
                         </a>
-                      ) : message.file_type?.startsWith('video/') ? (
+                      ) : message.file_type?.toLowerCase().startsWith('video/') ? (
                         <video
                           controls
                           preload="metadata"
@@ -802,7 +745,14 @@ const Chat = () => {
                           className="max-h-96 w-full rounded-lg bg-black"
                         />
                       ) : isAudioMessage ? (
-                        <VoiceMessagePlayer key={fileUrl} src={fileUrl} isOwn={isOwn} L={L} onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))} />
+                        <VoiceMessagePlayer
+                          key={fileUrl}
+                          src={fileUrl}
+                          mimeType={getAudioMimeType(message.file_type, message.file_url)}
+                          isOwn={isOwn}
+                          L={L}
+                          onError={() => setSignedErrors((current) => ({ ...current, [message.id]: true }))}
+                        />
                       ) : (
                         <a
                           href={fileUrl}

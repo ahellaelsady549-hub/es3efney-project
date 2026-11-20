@@ -242,21 +242,27 @@ export const stopMedicationReminderSound = () => {
   }
 };
 
-export const showReminderNotification = async (title: string, body: string, tag: string) => {
+export const showReminderNotification = async (title: string, body: string, tag: string, url = '/dashboard') => {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+  const targetUrl = new URL(url, window.location.origin).href;
 
   if ('serviceWorker' in navigator) {
     const registration = await navigator.serviceWorker.getRegistration('/');
     if (registration) {
       await registration.showNotification(title, {
         body,
-          icon: '/favicon.png',
+        icon: '/favicon.png',
         tag,
-        data: { url: window.location.origin },
+        data: { url: targetUrl },
       });
       return;
     }
   }
 
-  new Notification(title, { body, icon: '/favicon.png', tag });
+  const notification = new Notification(title, { body, icon: '/favicon.png', tag, data: { url: targetUrl } });
+  notification.onclick = () => {
+    window.focus();
+    window.location.assign(targetUrl);
+    notification.close();
+  };
 };

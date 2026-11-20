@@ -17,6 +17,13 @@ type ReminderSubscription = {
   chat_messages: boolean;
 };
 
+type Appointment = {
+  id: string;
+  user_id: string;
+  doctor_id: string;
+  starts_at: string;
+};
+
 const jsonResponse = (body: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -52,12 +59,6 @@ serve(async (request) => {
   const vapidPublicKey = Deno.env.get('VAPID_PUBLIC_KEY');
   const vapidPrivateKey = Deno.env.get('VAPID_PRIVATE_KEY');
   const vapidSubject = Deno.env.get('VAPID_SUBJECT');
-  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
-    console.error('Web Push VAPID secrets are not configured.');
-    return jsonResponse({ error: 'Web Push is not configured' }, 500);
-  }
-
-  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
   const supabase = createClient(
     Deno.env.get('SUPABASE_URL')!,
     serviceRoleKey,
@@ -71,9 +72,9 @@ serve(async (request) => {
       .select('id,user_id,name,dosage,time')
       .eq('reminder_enabled', true),
     supabase.from('doctor_bookings')
-      .select('id,user_id,starts_at')
+      .select('id,user_id,doctor_id,starts_at')
       .eq('status', 'confirmed')
-      .gte('starts_at', new Date(now.getTime() - 2 * 60 * 1000).toISOString())
+      .gte('starts_at', new Date(now.getTime() - 15 * 60 * 1000).toISOString())
       .lte('starts_at', new Date(now.getTime() + 31 * 60 * 1000).toISOString()),
     supabase.from('chat_notifications')
       .select('id,recipient_user_id,conversation_id,preview,created_at')
@@ -85,6 +86,72 @@ serve(async (request) => {
     console.error('Could not load reminder data for Web Push:', queryError);
     return jsonResponse({ error: 'Could not load reminder data' }, 500);
   }
+
+  const appointmentRows = (appointments ?? []) as Appointment[];
+  const doctorIds = [...new Set(appointmentRows.map((appointment) => appointment.doctor_id))];
+  const doctorsResult = doctorIds.length
+    ? await supabase.from('doctors').select('id,user_id').in('id', doctorIds)
+    : { data: [], error: null };
+  if (doctorsResult.error) {
+    console.error('Could not load doctors for appointment reminders:', doctorsResult.error);
+    return jsonResponse({ error: 'Could not load appointment doctors' }, 500);
+  }
+  const doctorUserById = new Map((doctorsResult.data ?? []).map((doctor) => [doctor.id, doctor.user_id]));
+  const chatByBookingId = new Map<string, string>();
+  const sessionStartRows: {
+    booking_id: string;
+    conversation_id: string;
+    recipient_user_id: string;
+    event_type: string;
+    title: string;
+    body: string;
+    href: string;
+  }[] = [];
+  for (const appointment of appointmentRows) {
+    const elapsed = now.getTime() - new Date(appointment.starts_at).getTime();
+    const { data: conversation, error: conversationError } = await supabase
+      .from('conversations')
+      .upsert({ user_id: appointment.user_id, doctor_id: appointment.doctor_id }, { onConflict: 'user_id,doctor_id' })
+      .select('id')
+      .single();
+    if (conversationError || !conversation) {
+      console.error('Could not resolve session chat for appointment notification:', conversationError);
+      continue;
+    }
+    chatByBookingId.set(appointment.id, conversation.id);
+    if (elapsed < 0 || elapsed >= 15 * 60 * 1000) continue;
+
+    const recipients = new Set([appointment.user_id, doctorUserById.get(appointment.doctor_id)].filter((id): id is string => Boolean(id)));
+    for (const recipientUserId of recipients) {
+      sessionStartRows.push({
+        booking_id: appointment.id,
+        conversation_id: conversation.id,
+        recipient_user_id: recipientUserId,
+        event_type: 'session_started',
+        title: 'حان موعد جلستك الطبية',
+        body: 'بدأ موعد الجلسة. اضغط للدخول إلى محادثة الطبيب.',
+        href: `/chat/${conversation.id}`,
+      });
+    }
+  }
+
+  let inAppNotificationsCreated = 0;
+  if (sessionStartRows.length) {
+    const { data, error } = await supabase.from('appointment_notifications')
+      .upsert(sessionStartRows, { onConflict: 'booking_id,recipient_user_id,event_type', ignoreDuplicates: true })
+      .select('id');
+    if (error) {
+      console.error('Could not create in-app appointment notifications:', error);
+      return jsonResponse({ error: 'Could not create appointment notifications' }, 500);
+    }
+    inAppNotificationsCreated = data?.length ?? 0;
+  }
+
+  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
+    console.warn('Web Push VAPID secrets are not configured; in-app appointment notifications were still created.');
+    return jsonResponse({ sent: 0, failed: 0, inAppNotificationsCreated });
+  }
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
 
   let sent = 0;
   let failed = 0;
@@ -112,19 +179,21 @@ serve(async (request) => {
     }
 
     if (subscription.appointment_reminders) {
-      for (const appointment of (appointments ?? []).filter((item) => item.user_id === subscription.user_id)) {
+      for (const appointment of appointmentRows.filter((item) =>
+        item.user_id === subscription.user_id || doctorUserById.get(item.doctor_id) === subscription.user_id
+      )) {
         const startsAt = new Date(appointment.starts_at);
         for (const stage of [
-          { offset: 30 * 60 * 1000, key: '30m', body: 'موعد الطبيب بعد نصف ساعة.' },
-          { offset: 0, key: 'now', body: 'حان موعد جلستك الطبية الآن.' },
+          { offset: 30 * 60 * 1000, key: '30m', body: 'موعد الطبيب بعد نصف ساعة.', grace: 2 * 60 * 1000 },
+          { offset: 0, key: 'now', body: 'حان موعد جلستك الطبية الآن.', grace: 15 * 60 * 1000 },
         ]) {
           const dueAt = startsAt.getTime() - stage.offset;
-          if (now.getTime() < dueAt || now.getTime() - dueAt >= 2 * 60 * 1000) continue;
+          if (now.getTime() < dueAt || now.getTime() - dueAt >= stage.grace) continue;
           pending.push({
             key: `appointment:${subscription.user_id}:${appointment.id}:${stage.key}`,
             title: stage.key === 'now' ? 'حان موعد جلستك الطبية' : 'تذكير بموعد الطبيب',
             body: stage.body,
-            url: '/dashboard',
+            url: `/chat/${chatByBookingId.get(appointment.id) || ''}`,
           });
         }
       }
@@ -178,5 +247,5 @@ serve(async (request) => {
     }
   }
 
-  return jsonResponse({ sent, failed });
+  return jsonResponse({ sent, failed, inAppNotificationsCreated });
 });

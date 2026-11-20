@@ -43,6 +43,26 @@ type PendingSignupData = {
   cvReview: string | null;
 };
 
+const describeSubmissionError = (error: unknown) => {
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const code = typeof value.code === 'string' ? value.code : '';
+  const details = typeof value.details === 'string' ? value.details : '';
+  const hint = typeof value.hint === 'string' ? value.hint : '';
+  const combined = [message, details, hint, code].filter(Boolean).join(' · ');
+
+  if (['42P01', 'PGRST204', 'PGRST205'].includes(code) || /doctor_verification_requests.*(not found|schema cache)|relation .* does not exist|column .* not found.*schema cache/i.test(combined)) {
+    return 'جداول أو أعمدة التوثيق غير محدثة على قاعدة البيانات. طبّق ملفات الترحيل باستخدام supabase db push، خصوصًا ترحيلات بيانات الطبيب وسجل طلبات التوثيق.';
+  }
+  if (code === '42501' || /row-level security|permission denied/i.test(combined)) {
+    return 'رفضت قاعدة البيانات صلاحية حفظ الطلب. تأكد من تسجيل الدخول وتطبيق ترحيلات صلاحيات التوثيق.';
+  }
+  if (/bucket.*not found/i.test(combined)) {
+    return 'مساحة رفع مستندات التوثيق غير موجودة. طبّق ترحيلات التخزين ثم أعد إرسال الطلب.';
+  }
+  return combined || 'راجع إعدادات قاعدة البيانات والتخزين ثم حاول مجددًا.';
+};
+
 const Auth = () => {
   const { user, signIn, loading } = useAuth();
   const { L } = useLanguage();
@@ -112,11 +132,12 @@ const Auth = () => {
   const saveSignupApplications = async (userId: string, signup: PendingSignupData, onProgress?: (message: string) => void) => {
     const uploaded: Array<{ bucket: string; path: string }> = [];
     const token = crypto.randomUUID();
+    let step = L('تجهيز الطلب', 'Preparing the application');
 
     try {
       const upload = async (bucket: string, path: string, file: File, contentType?: string) => {
         const { error } = await supabase.storage.from(bucket).upload(path, file, contentType ? { contentType } : {});
-        if (error) throw error;
+        if (error) throw new Error(`${L(`رفع ملف ${bucket}`, `Uploading ${bucket} file`)}: ${describeSubmissionError(error)}`);
         uploaded.push({ bucket, path });
       };
 
@@ -138,11 +159,13 @@ const Auth = () => {
         cvPath = `${userId}/${Date.now()}-${signup.doctorCvFile.name.replace(/[^\w.-]/g, '_')}`;
         uploadJobs.push(upload('doctor-cvs', cvPath, signup.doctorCvFile, 'application/pdf'));
       }
+      step = L('رفع مستندات التوثيق', 'Uploading verification documents');
       const uploadResults = await Promise.allSettled(uploadJobs);
       const failedUpload = uploadResults.find((result) => result.status === 'rejected');
       if (failedUpload?.status === 'rejected') throw failedUpload.reason;
 
       onProgress?.(L('تم رفع الملفات، جارٍ إرسال الطلب للمراجعة...', 'Documents uploaded. Sending the application for review...'));
+      step = L('حفظ بيانات الهوية', 'Saving identity details');
       const { error: identityError } = await supabase.from('identity_applications').insert({
         user_id: userId,
         national_id: signup.nationalId,
@@ -153,9 +176,10 @@ const Auth = () => {
         account_type: signup.userType,
         status: 'pending',
       });
-      if (identityError) throw identityError;
+      if (identityError) throw new Error(describeSubmissionError(identityError));
 
       if (signup.userType === 'doctor') {
+        step = L('حفظ ملف الطبيب', 'Saving doctor profile');
         const { data: doctor, error: doctorError } = await supabase.from('doctors').upsert({
           user_id: userId,
           specialty: signup.doctorSpecialty,
@@ -170,8 +194,9 @@ const Auth = () => {
           is_verified: false,
           verification_status: 'pending',
         }, { onConflict: 'user_id' }).select('id').single();
-        if (doctorError) throw doctorError;
+        if (doctorError) throw new Error(describeSubmissionError(doctorError));
 
+        step = L('إرسال طلب التوثيق للإدارة', 'Sending the verification request to administrators');
         const { error: requestError } = await supabase.from('doctor_verification_requests').upsert({
           submission_key: signup.requestKey,
           doctor_id: doctor.id,
@@ -194,11 +219,12 @@ const Auth = () => {
           workplace_address: signup.workplaceAddress || null,
           status: 'pending',
         }, { onConflict: 'submission_key', ignoreDuplicates: true });
-        if (requestError) throw requestError;
+        if (requestError) throw new Error(describeSubmissionError(requestError));
       }
     } catch (error) {
       await Promise.all(uploaded.map(({ bucket, path }) => supabase.storage.from(bucket).remove([path])));
-      throw error;
+      const description = error instanceof Error ? error.message : describeSubmissionError(error);
+      throw new Error(`${step}: ${description}`);
     }
   };
   
@@ -417,7 +443,7 @@ const Auth = () => {
       setIsLoading(false);
       toast({
         title: L('تعذر حفظ طلب التوثيق', 'Could not save verification request'),
-        description: err instanceof Error ? err.message : L('راجع إعدادات قاعدة البيانات والتخزين ثم حاول مجددًا.', 'Check database and storage setup, then try again.'),
+        description: describeSubmissionError(err),
         variant: 'destructive',
       });
       return;
@@ -481,7 +507,7 @@ const Auth = () => {
       setIsLoading(false);
       toast({
         title: L('تم تأكيد البريد لكن تعذر حفظ الطلب', 'Email verified, but the application could not be saved'),
-        description: error instanceof Error ? error.message : L('صحّح إعدادات التخزين أو قاعدة البيانات ثم اضغط تأكيد الرمز مجددًا.', 'Fix storage or database setup, then press Confirm code again.'),
+        description: describeSubmissionError(error),
         variant: 'destructive',
       });
       return;

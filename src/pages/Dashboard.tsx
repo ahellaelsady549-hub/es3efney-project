@@ -107,6 +107,7 @@ interface IdentityApplicationStatus {
   status: 'pending' | 'approved' | 'rejected';
   rejection_reason: string | null;
   created_at: string;
+  reviewed_at: string | null;
 }
 
 const Dashboard = () => {
@@ -140,15 +141,33 @@ const Dashboard = () => {
 
   const fetchIdentityStatus = useCallback(async () => {
     if (!user) return;
-    const { data, error } = await supabase
-      .from('identity_applications')
-      .select('status, rejection_reason, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (error) console.error('Could not load identity application status:', error);
-    setIdentityStatus((data as IdentityApplicationStatus | null) ?? null);
+    const [identityResult, doctorRequestResult] = await Promise.all([
+      supabase.from('identity_applications')
+        .select('status, rejection_reason, created_at, reviewed_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      supabase.from('doctor_verification_requests')
+        .select('status, rejection_reason, created_at, reviewed_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    if (identityResult.error) console.error('Could not load identity application status:', identityResult.error);
+    if (doctorRequestResult.error) console.error('Could not load doctor verification status:', doctorRequestResult.error);
+
+    const candidates = [identityResult.data, doctorRequestResult.data]
+      .filter((row) => row !== null)
+      .map((row) => row as IdentityApplicationStatus);
+    const latestStatus = candidates.reduce<IdentityApplicationStatus | null>((latest, candidate) => {
+      if (!latest) return candidate;
+      const latestTime = new Date(latest.reviewed_at || latest.created_at).getTime();
+      const candidateTime = new Date(candidate.reviewed_at || candidate.created_at).getTime();
+      return candidateTime >= latestTime ? candidate : latest;
+    }, null);
+    setIdentityStatus(latestStatus);
   }, [user]);
 
   useEffect(() => {
@@ -173,10 +192,18 @@ const Dashboard = () => {
         table: 'identity_applications',
         filter: `user_id=eq.${user.id}`,
       }, refreshStatus)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'doctor_verification_requests',
+        filter: `user_id=eq.${user.id}`,
+      }, refreshStatus)
       .subscribe();
     window.addEventListener('focus', refreshStatus);
+    const refreshInterval = window.setInterval(refreshStatus, 30_000);
     return () => {
       window.removeEventListener('focus', refreshStatus);
+      window.clearInterval(refreshInterval);
       void supabase.removeChannel(channel);
     };
   }, [user, fetchIdentityStatus]);

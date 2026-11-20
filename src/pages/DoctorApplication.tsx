@@ -41,6 +41,26 @@ interface IdentitySnapshot {
   ai_review: string | null;
 }
 
+const describeSubmissionError = (error: unknown) => {
+  const value = error && typeof error === 'object' ? error as Record<string, unknown> : {};
+  const message = error instanceof Error ? error.message : typeof error === 'string' ? error : '';
+  const code = typeof value.code === 'string' ? value.code : '';
+  const details = typeof value.details === 'string' ? value.details : '';
+  const hint = typeof value.hint === 'string' ? value.hint : '';
+  const combined = [message, details, hint, code].filter(Boolean).join(' · ');
+
+  if (['42P01', 'PGRST204', 'PGRST205'].includes(code) || /doctor_verification_requests.*(not found|schema cache)|relation .* does not exist|column .* not found.*schema cache/i.test(combined)) {
+    return 'جداول أو أعمدة التوثيق غير محدثة على قاعدة البيانات. طبّق ملفات الترحيل باستخدام supabase db push، خصوصًا ترحيلات بيانات الطبيب وسجل طلبات التوثيق.';
+  }
+  if (code === '42501' || /row-level security|permission denied/i.test(combined)) {
+    return 'رفضت قاعدة البيانات صلاحية حفظ الطلب. تأكد من تسجيل الدخول وتطبيق ترحيلات صلاحيات التوثيق.';
+  }
+  if (/bucket.*not found/i.test(combined)) {
+    return 'مساحة رفع السيرة الذاتية غير موجودة. طبّق ترحيلات التخزين ثم أعد إرسال الطلب.';
+  }
+  return combined || 'راجع إعدادات قاعدة البيانات والتخزين ثم حاول مجددًا.';
+};
+
 const DoctorApplication = () => {
   const { user, loading } = useAuth();
   const { L } = useLanguage();
@@ -137,6 +157,7 @@ const DoctorApplication = () => {
 
     setIsSaving(true);
     let uploadedPath: string | null = null;
+    let step = L('رفع السيرة الذاتية', 'Uploading the CV');
 
     try {
       if (cvFile) {
@@ -147,6 +168,7 @@ const DoctorApplication = () => {
         if (uploadError) throw uploadError;
       }
 
+      step = L('حفظ ملف الطبيب', 'Saving doctor profile');
       const { data, error } = await supabase
         .from('doctors')
         .upsert({
@@ -170,6 +192,7 @@ const DoctorApplication = () => {
 
       if (error) throw error;
 
+      step = L('إرسال طلب التوثيق للإدارة', 'Sending the verification request to administrators');
       const { error: requestError } = await supabase.from('doctor_verification_requests').insert({
         submission_key: crypto.randomUUID(),
         doctor_id: data.id,
@@ -209,7 +232,7 @@ const DoctorApplication = () => {
       console.error('Error submitting doctor application:', error);
       toast({
         title: L('تعذر إرسال الطلب', 'Could not submit application'),
-        description: error instanceof Error ? error.message : L('حدث خطأ أثناء حفظ الطلب', 'An error occurred while saving the application'),
+        description: `${step}: ${describeSubmissionError(error)}`,
         variant: 'destructive',
       });
     } finally {
