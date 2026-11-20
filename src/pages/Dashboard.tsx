@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
@@ -138,6 +138,19 @@ const Dashboard = () => {
     disease_id: ''
   });
 
+  const fetchIdentityStatus = useCallback(async () => {
+    if (!user) return;
+    const { data, error } = await supabase
+      .from('identity_applications')
+      .select('status, rejection_reason, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) console.error('Could not load identity application status:', error);
+    setIdentityStatus((data as IdentityApplicationStatus | null) ?? null);
+  }, [user]);
+
   useEffect(() => {
     if (!loading && !user) {
       navigate('/auth');
@@ -149,6 +162,24 @@ const Dashboard = () => {
       fetchUserData();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    const refreshStatus = () => { void fetchIdentityStatus(); };
+    const channel = supabase.channel(`identity-status-${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'identity_applications',
+        filter: `user_id=eq.${user.id}`,
+      }, refreshStatus)
+      .subscribe();
+    window.addEventListener('focus', refreshStatus);
+    return () => {
+      window.removeEventListener('focus', refreshStatus);
+      void supabase.removeChannel(channel);
+    };
+  }, [user, fetchIdentityStatus]);
 
   const fetchUserData = async () => {
     if (!user) return;
@@ -198,15 +229,7 @@ const Dashboard = () => {
     
     if (diseasesData) setUserDiseases(diseasesData);
 
-    const { data: identityData, error: identityError } = await supabase
-      .from('identity_applications')
-      .select('status, rejection_reason, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (identityError) console.error('Could not load identity application status:', identityError);
-    setIdentityStatus(identityData as IdentityApplicationStatus | null);
+    await fetchIdentityStatus();
   };
 
   const handleAddMedication = async () => {
@@ -453,7 +476,7 @@ const Dashboard = () => {
                   ? L('حسابك قيد المراجعة', 'Your account is under review')
                   : identityStatus.status === 'approved'
                     ? L('تم قبول توثيق حسابك', 'Your account verification was approved')
-                    : L('تم الرد على طلب التوثيق', 'Your verification request has been reviewed')}
+                    : L('تم رفض طلب التوثيق', 'Your verification request was rejected')}
                 <Badge variant={identityStatus.status === 'rejected' ? 'destructive' : 'secondary'}>
                   {identityStatus.status === 'pending' ? L('قيد المراجعة', 'Under review') : identityStatus.status === 'approved' ? L('مقبول', 'Approved') : L('مرفوض', 'Rejected')}
                 </Badge>
