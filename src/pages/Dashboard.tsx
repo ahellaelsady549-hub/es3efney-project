@@ -37,7 +37,7 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { WorkoutProgress } from '@/components/gym/WorkoutProgress';
  
 import { DoctorSchedule } from '@/components/chat/DoctorSchedule';
-import { UpcomingAppointmentCountdown } from '@/components/chat/UpcomingAppointmentCountdown';
+import { DoctorBioEditor, PatientAppointments } from '@/components/chat/PatientAppointments';
 
 import { playMedicationReminderSound, requestWebNotificationPermission, stopMedicationReminderSound } from '@/services/pushNotifications';
 
@@ -469,13 +469,13 @@ const Dashboard = () => {
           </Card>
         )}
 
-        <UpcomingAppointmentCountdown userId={user.id} doctorId={myDoctorId} />
-
-        {myDoctorId && <div className="mb-6"><DoctorSchedule doctorId={myDoctorId} /></div>}
-
         {/* Tabs */}
         <Tabs defaultValue="medications" className="space-y-6">
-          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-7">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 xl:grid-cols-8">
+            <TabsTrigger value="appointments" className="flex items-center gap-2">
+              <Calendar className="w-4 h-4" />
+              {L('مواعيدي', 'Appointments')}
+            </TabsTrigger>
             <TabsTrigger value="medications" className="flex items-center gap-2">
               <Pill className="w-4 h-4" />
               {L('أدويتي', 'My Medications')}
@@ -505,6 +505,15 @@ const Dashboard = () => {
               {L('أهدافي الغذائية', 'Nutrition goals')}
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="appointments" className="space-y-4">
+            {myDoctorId
+              ? <>
+                <DoctorBioEditor doctorId={myDoctorId} userId={user.id} />
+                <DoctorSchedule doctorId={myDoctorId} />
+              </>
+              : <PatientAppointments userId={user.id} />}
+          </TabsContent>
 
           {/* Medications Tab */}
           <TabsContent value="medications">

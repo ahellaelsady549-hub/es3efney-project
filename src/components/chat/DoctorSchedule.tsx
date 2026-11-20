@@ -7,12 +7,13 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { Check, Trash2, X } from 'lucide-react';
+import { SessionCountdown } from '@/components/chat/SessionCountdown';
 
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const DAYS_EN = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 interface Availability { id: string; weekday: number; start_time: string; end_time: string }
-interface Booking { id: string; starts_at: string; ends_at: string; status: string; user_id: string }
+interface Booking { id: string; starts_at: string; ends_at: string; status: string; user_id: string; consultation_reason: string }
 
 export function DoctorSchedule({ doctorId }: { doctorId: string }) {
   const { L } = useLanguage();
@@ -27,7 +28,7 @@ export function DoctorSchedule({ doctorId }: { doctorId: string }) {
   const load = useCallback(async () => {
     const [{ data: hours, error: hoursError }, { data: upcoming, error: bookingError }] = await Promise.all([
       supabase.from('doctor_availability').select('id,weekday,start_time,end_time').eq('doctor_id', doctorId).order('weekday'),
-      supabase.from('doctor_bookings').select('id,starts_at,ends_at,status,user_id').eq('doctor_id', doctorId).in('status', ['pending', 'confirmed']).gte('ends_at', new Date().toISOString()).order('starts_at'),
+      supabase.from('doctor_bookings').select('id,starts_at,ends_at,status,user_id,consultation_reason').eq('doctor_id', doctorId).in('status', ['pending', 'confirmed']).gte('ends_at', new Date().toISOString()).order('starts_at'),
     ]);
     if (hoursError) toast.error(hoursError.message);
     if (bookingError) toast.error(bookingError.message);
@@ -110,8 +111,10 @@ export function DoctorSchedule({ doctorId }: { doctorId: string }) {
           <div key={booking.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm">
             <div className="space-y-1">
               <div className="font-medium">{patientNames[booking.user_id] || L('مستخدم', 'Patient')}</div>
-              <div>{new Date(booking.starts_at).toLocaleString(L('ar-EG', 'en-US'), { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</div>
+              <div className="text-muted-foreground">{new Date(booking.starts_at).toLocaleDateString(L('ar-EG', 'en-US'), { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })} · {new Date(booking.starts_at).toLocaleTimeString(L('ar-EG', 'en-US'), { hour: '2-digit', minute: '2-digit' })}</div>
+              <div className="rounded-md bg-muted/60 p-2"><span className="font-medium">{L('سبب الاستشارة:', 'Consultation:')}</span> {booking.consultation_reason}</div>
               <Badge variant={booking.status === 'pending' ? 'secondary' : 'default'}>{booking.status === 'pending' ? L('بانتظار موافقتك', 'Waiting for your approval') : L('مؤكدة', 'Confirmed')}</Badge>
+              {booking.status === 'confirmed' && new Date(booking.starts_at) > new Date() && <SessionCountdown startsAt={booking.starts_at} />}
             </div>
             <div className="flex gap-2">
               {booking.status === 'pending' ? <>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,7 +20,12 @@ import {
   Mic,
   MicOff,
   AlertTriangle,
-  Shield
+  Shield,
+  Pause,
+  Play,
+  Reply,
+  Smile,
+  X
 } from 'lucide-react';
 
 interface Message {
@@ -31,7 +36,14 @@ interface Message {
   file_type: string | null;
   is_flagged: boolean;
   flag_reason: string | null;
+  reply_to_message_id: string | null;
   created_at: string;
+}
+
+interface MessageReaction {
+  message_id: string;
+  user_id: string;
+  emoji: string;
 }
 
 interface Participant {
@@ -61,7 +73,9 @@ const formatAudioTime = (seconds: number) => {
 };
 
 const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
-  const audioContext = new AudioContext();
+  const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioContextConstructor) throw new Error('Audio decoding is not supported in this browser');
+  const audioContext = new AudioContextConstructor();
   try {
     const decoded = await audioContext.decodeAudioData(await recording.arrayBuffer());
     const targetSampleRate = Math.min(decoded.sampleRate, 16000);
@@ -115,28 +129,89 @@ const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
 
 const VoiceMessagePlayer = ({ src, isOwn, L, onError }: { src: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const waveformRef = useRef<HTMLButtonElement>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [playbackError, setPlaybackError] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const progress = duration ? currentTime / duration : 0;
+
+  const togglePlayback = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      try {
+        await audio.play();
+      } catch {
+        setPlaybackError(true);
+        onError();
+      }
+    } else audio.pause();
+  };
+
+  const seek = (event: React.MouseEvent<HTMLButtonElement>) => {
+    const audio = audioRef.current;
+    const bounds = waveformRef.current?.getBoundingClientRect();
+    if (!audio || !bounds || !Number.isFinite(audio.duration)) return;
+    const offset = Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width));
+    audio.currentTime = offset * audio.duration;
+  };
 
   return (
-    <div className={`min-w-56 rounded-xl p-2 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
+    <div className={`flex min-w-[240px] items-center gap-3 rounded-2xl p-2.5 ${isOwn ? 'bg-black/10' : 'bg-background/70'}`}>
       <audio
         ref={audioRef}
         src={src}
-        controls
         preload="metadata"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
         onLoadedMetadata={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onDurationChange={(event) => setDuration(Number.isFinite(event.currentTarget.duration) ? event.currentTarget.duration : 0)}
         onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onError={() => { setPlaybackError(true); onError(); }}
-        className="h-10 w-full"
+        className="sr-only"
       />
-      <div className="mt-1 flex justify-between text-[11px] tabular-nums opacity-75">
-        <span>{formatAudioTime(currentTime)}</span>
-        <span>{duration ? formatAudioTime(duration) : L('تحميل المدة...', 'Loading duration...')}</span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        onClick={() => void togglePlayback()}
+        aria-label={isPlaying ? L('إيقاف مؤقت', 'Pause voice message') : L('تشغيل الرسالة الصوتية', 'Play voice message')}
+        className={`h-10 w-10 shrink-0 rounded-full ${isOwn ? 'text-current hover:bg-black/10' : 'text-primary'}`}
+      >
+        {isPlaying ? <Pause className="h-5 w-5 fill-current" /> : <Play className="h-5 w-5 fill-current" />}
+      </Button>
+      <div className="min-w-0 flex-1">
+        <button
+          ref={waveformRef}
+          type="button"
+          onClick={seek}
+          aria-label={L('تقديم أو ترجيع التسجيل الصوتي', 'Seek in voice message')}
+          className="flex h-8 w-full items-center gap-[3px] overflow-hidden"
+        >
+          {Array.from({ length: 32 }, (_, index) => {
+            const height = 7 + ((index * 13 + 5) % 19);
+            return <span key={index} className={`min-w-[2px] flex-1 rounded-full ${index / 32 <= progress ? 'bg-current opacity-90' : 'bg-current opacity-30'}`} style={{ height }} />;
+          })}
+        </button>
+        <div className="mt-0.5 flex items-center justify-between gap-2 text-[11px] tabular-nums opacity-75">
+          <span>{formatAudioTime(currentTime)}</span>
+          <button
+            type="button"
+            onClick={() => {
+              const nextRate = playbackRate >= 2 ? 1 : playbackRate + 0.5;
+              setPlaybackRate(nextRate);
+              if (audioRef.current) audioRef.current.playbackRate = nextRate;
+            }}
+            className="rounded px-1 hover:bg-black/10"
+            aria-label={L('تغيير سرعة التشغيل', 'Change playback speed')}
+          >{playbackRate}×</button>
+          <span>{duration ? formatAudioTime(duration) : '--:--'}</span>
+        </div>
       </div>
-      {playbackError && <p className="mt-1 text-xs text-destructive">{L('تعذر تشغيل التسجيل. جرّب إعادة تحميل المرفق.', 'Could not play this recording. Try reloading the attachment.')}</p>}
+      {playbackError && <span className="sr-only" role="alert">{L('تعذر تشغيل التسجيل. جرّب إعادة تحميل المرفق.', 'Could not play this recording. Try reloading the attachment.')}</span>}
     </div>
   );
 };
@@ -148,6 +223,9 @@ const Chat = () => {
   const { toast } = useToast();
   const { L } = useLanguage();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [messageReactions, setMessageReactions] = useState<Record<string, MessageReaction[]>>({});
+  const [reactionMenuMessageId, setReactionMenuMessageId] = useState<string | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<Message | null>(null);
   const [newMessage, setNewMessage] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [otherParticipant, setOtherParticipant] = useState<Participant | null>(null);
@@ -195,6 +273,22 @@ const Chat = () => {
     const open = (data || []).some((b) => isSessionOpen(b));
     setBanned(open && ban === false);
   };
+  const loadReactions = useCallback(async () => {
+    if (!conversationId) return;
+    const { data, error } = await supabase
+      .from('message_reactions')
+      .select('message_id,user_id,emoji')
+      .eq('conversation_id', conversationId);
+    if (error) {
+      console.error('Unable to load chat reactions:', error);
+      return;
+    }
+    const grouped: Record<string, MessageReaction[]> = {};
+    (data || []).forEach((reaction) => {
+      (grouped[reaction.message_id] ||= []).push(reaction as MessageReaction);
+    });
+    setMessageReactions(grouped);
+  }, [conversationId]);
   const openSession = sessions.find((b) => isSessionOpen(b));
   const nextSession = sessions.find((b) => b.status === 'confirmed' && new Date(b.starts_at) > new Date());
   void tick;
@@ -247,8 +341,16 @@ const Chat = () => {
     const path = `${conversationId}/${user.id}-${Date.now()}-${f.name.replace(/[^\w.-]/g, '_')}`;
     const up = await supabase.storage.from('chat-files').upload(path, f, { contentType });
     if (!up.error) {
-      const { error } = await supabase.from('messages').insert({ conversation_id: conversationId, sender_id: user.id, content: null, file_url: `storage:${path}`, file_type: contentType || 'application/octet-stream' });
+      const { error } = await supabase.from('messages').insert({
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content: null,
+        file_url: `storage:${path}`,
+        file_type: contentType || 'application/octet-stream',
+        reply_to_message_id: replyToMessage?.id || null,
+      });
       if (error) toast({ title: L('تعذر الإرسال', 'Send failed'), description: error.message, variant: 'destructive' });
+      else setReplyToMessage(null);
     } else toast({ title: L('تعذر رفع الملف', 'Upload failed'), description: up.error.message, variant: 'destructive' });
     } catch (error) {
       const message = getReadableError(error);
@@ -295,7 +397,9 @@ const Chat = () => {
         setRecordingSeconds(0);
         if (!blob.size) return;
 
-        const originalFile = new File([blob], `voice-source-${Date.now()}`, { type: blob.type || 'audio/webm' });
+        const originalType = blob.type || 'audio/webm';
+        const fileExtension = originalType.includes('mp4') ? 'm4a' : originalType.includes('ogg') ? 'ogg' : 'webm';
+        const originalFile = new File([blob], `voice-source-${Date.now()}.${fileExtension}`, { type: originalType });
         setProcessingVoice(true);
         try {
           await sendFile(await convertVoiceRecordingToWav(blob));
@@ -448,6 +552,7 @@ const Chat = () => {
 
       if (msgsError) throw msgsError;
       setMessages(msgs || []);
+    void loadReactions();
     } catch (error) {
       console.error('Error fetching conversation:', error);
       toast({
@@ -458,6 +563,35 @@ const Chat = () => {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
+    if (!conversationId) return;
+    const channel = supabase.channel(`message-reactions-${conversationId}`)
+      .on('postgres_changes', {
+        event: '*', schema: 'public', table: 'message_reactions', filter: `conversation_id=eq.${conversationId}`,
+      }, () => { void loadReactions(); })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [conversationId, loadReactions]);
+
+  const toggleReaction = async (message: Message, emoji: string) => {
+    if (!user || !conversationId || !openSession || banned) return;
+    const current = messageReactions[message.id]?.find((reaction) => reaction.user_id === user.id);
+    const result = current?.emoji === emoji
+      ? await supabase.from('message_reactions').delete().eq('message_id', message.id).eq('user_id', user.id)
+      : await supabase.from('message_reactions').upsert({
+        conversation_id: conversationId,
+        message_id: message.id,
+        user_id: user.id,
+        emoji,
+      }, { onConflict: 'message_id,user_id' });
+    if (result.error) {
+      toast({ title: L('تعذر إضافة التفاعل', 'Could not react to message'), description: result.error.message, variant: 'destructive' });
+      return;
+    }
+    setReactionMenuMessageId(null);
+    void loadReactions();
   };
 
   const subscribeToMessages = () => {
@@ -514,12 +648,14 @@ const Chat = () => {
           conversation_id: conversationId,
           sender_id: user.id,
           content: messageContent,
+          reply_to_message_id: replyToMessage?.id || null,
           is_flagged: !moderation.isSafe,
           flag_reason: moderation.reason || null
         });
 
       if (error) throw error;
       setNewMessage('');
+      setReplyToMessage(null);
 
       if (!moderation.isSafe) {
         toast({
@@ -594,6 +730,17 @@ const Chat = () => {
             const storagePath = message.file_url?.startsWith('storage:') ? message.file_url.slice(8) : null;
             const fileUrl = storagePath ? signed[message.id] : message.file_url || undefined;
             const fileError = signedErrors[message.id];
+            const replyMessage = message.reply_to_message_id
+              ? messages.find((candidate) => candidate.id === message.reply_to_message_id)
+              : null;
+            const reactions = messageReactions[message.id] || [];
+            const reactionGroups = reactions.reduce<Record<string, { count: number; selected: boolean }>>((groups, reaction) => {
+              const group = groups[reaction.emoji] || { count: 0, selected: false };
+              group.count += 1;
+              if (reaction.user_id === user?.id) group.selected = true;
+              groups[reaction.emoji] = group;
+              return groups;
+            }, {});
             const isAudioMessage = message.file_type?.startsWith('audio/')
               || /voice-[^/]*\.(m4a|mp4|webm|ogg|mp3|wav)$/i.test(message.file_url || '');
             return (
@@ -602,7 +749,7 @@ const Chat = () => {
                 className={`flex ${isOwn ? 'justify-start' : 'justify-end'}`}
               >
                 <Card
-                  className={`max-w-[80%] p-3 ${
+                  className={`max-w-[90%] p-3 sm:max-w-[80%] ${
                     isOwn 
                       ? 'bg-primary text-primary-foreground' 
                       : 'bg-muted'
@@ -612,6 +759,22 @@ const Chat = () => {
                     <div className="flex items-center gap-1 text-xs text-yellow-500 mb-1">
                       <AlertTriangle className="w-3 h-3" />
                       {L('تم تمييز هذه الرسالة', 'This message has been flagged')}
+                    </div>
+                  )}
+                  {message.reply_to_message_id && (
+                    <div className="mb-2 rounded-lg border-s-2 border-primary/60 bg-background/20 px-2 py-1 text-xs">
+                      <div className="font-semibold opacity-80">
+                        {replyMessage?.sender_id === user?.id ? L('أنت', 'You') : otherParticipant?.name || L('الطرف الآخر', 'Other participant')}
+                      </div>
+                      <p className="line-clamp-2 opacity-80">
+                        {replyMessage?.content || (replyMessage?.file_type?.startsWith('audio/')
+                          ? L('رسالة صوتية', 'Voice message')
+                          : replyMessage?.file_type?.startsWith('image/')
+                            ? L('صورة', 'Photo')
+                            : replyMessage?.file_type?.startsWith('video/')
+                              ? L('فيديو', 'Video')
+                              : L('رسالة لم تعد متاحة', 'Message no longer available'))}
+                      </p>
                     </div>
                   )}
                   {message.content && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
@@ -659,6 +822,56 @@ const Chat = () => {
                       minute: '2-digit' 
                     })}
                   </span>
+                  {Object.keys(reactionGroups).length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {Object.entries(reactionGroups).map(([emoji, group]) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          disabled={!openSession || banned}
+                          onClick={() => void toggleReaction(message, emoji)}
+                          aria-label={L(`${group.count} تفاعل ${emoji}`, `${group.count} ${emoji} reactions`)}
+                          className={`rounded-full border px-2 py-0.5 text-xs ${group.selected ? 'border-primary bg-primary/15' : 'border-border bg-background/50'}`}
+                        >{emoji} {group.count}</button>
+                      ))}
+                    </div>
+                  )}
+                  {openSession && !banned && (
+                    <div className="mt-1 flex justify-end gap-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        onClick={() => { setReplyToMessage(message); setReactionMenuMessageId(null); }}
+                        aria-label={L('الرد على الرسالة', 'Reply to message')}
+                      ><Reply className="me-1 h-3.5 w-3.5" />{L('رد', 'Reply')}</Button>
+                      <div className="relative">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => setReactionMenuMessageId((current) => current === message.id ? null : message.id)}
+                          aria-label={L('إضافة تفاعل', 'Add reaction')}
+                          aria-expanded={reactionMenuMessageId === message.id}
+                        ><Smile className="h-4 w-4" /></Button>
+                        {reactionMenuMessageId === message.id && (
+                          <div className="absolute bottom-full end-0 z-20 mb-1 flex rounded-full border bg-background p-1 shadow-lg">
+                            {['👍', '❤️', '😂', '😮', '🙏', '👏'].map((emoji) => (
+                              <button
+                                key={emoji}
+                                type="button"
+                                onClick={() => void toggleReaction(message, emoji)}
+                                aria-label={L(`تفاعل ${emoji}`, `React ${emoji}`)}
+                                className="rounded-full p-1.5 text-lg transition-transform hover:scale-125"
+                              >{emoji}</button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </Card>
               </div>
             );
@@ -680,6 +893,17 @@ const Chat = () => {
           </div>
         ) : (
         <div className="max-w-2xl mx-auto flex flex-wrap items-center gap-2">
+          {replyToMessage && (
+            <div className="flex w-full items-center justify-between gap-3 rounded-xl border-s-2 border-primary bg-muted/70 px-3 py-2 text-sm">
+              <div className="min-w-0">
+                <p className="font-semibold">{L('الرد على رسالة', 'Replying to message')}</p>
+                <p className="truncate text-muted-foreground">{replyToMessage.content || replyToMessage.file_type || L('مرفق', 'Attachment')}</p>
+              </div>
+              <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setReplyToMessage(null)} aria-label={L('إلغاء الرد', 'Cancel reply')}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
           {(isRecording || processingVoice || uploading) && (
             <div className="w-full text-center text-xs text-muted-foreground" role="status">
               {isRecording

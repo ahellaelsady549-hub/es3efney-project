@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { availableSlots, type AvailabilityRow, type BookingRow } from '@/lib/sessions';
@@ -15,6 +16,7 @@ export function BookingPanel({ doctorId, canBook, onBooked }: Props) {
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [dayOffset, setDayOffset] = useState(0);
   const [selectedSlot, setSelectedSlot] = useState<Date | null>(null);
+  const [consultationReason, setConsultationReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [selectionPrompt, setSelectionPrompt] = useState(false);
   const slotPickerRef = useRef<HTMLDivElement>(null);
@@ -50,10 +52,15 @@ export function BookingPanel({ doctorId, canBook, onBooked }: Props) {
 
   const book = async () => {
     if (!selectedSlot || busy) return;
+    if (consultationReason.trim().length < 5) {
+      toast.error(L('اكتب سبب الاستشارة في 5 أحرف على الأقل قبل إرسال الطلب.', 'Please describe the consultation in at least 5 characters.'));
+      return;
+    }
     setBusy(true);
     const { error } = await supabase.rpc('request_doctor_booking', {
       _doctor_id: doctorId,
       _starts_at: selectedSlot.toISOString(),
+      _consultation_reason: consultationReason.trim(),
     });
     setBusy(false);
     if (error) {
@@ -72,6 +79,7 @@ export function BookingPanel({ doctorId, canBook, onBooked }: Props) {
     }
     toast.success(L('تم إرسال طلب الحجز للطبيب، وسيتم تأكيد الجلسة بعد موافقته.', 'Booking request sent. Your session is confirmed after the doctor approves it.'));
     setSelectedSlot(null);
+    setConsultationReason('');
     onBooked();
     void load();
   };
@@ -99,6 +107,20 @@ export function BookingPanel({ doctorId, canBook, onBooked }: Props) {
         {L('المحادثة تفتح من بداية الجلسة وحتى ساعة بعد انتهائها.', 'Chat opens at session start and closes one hour after it ends.')}
       </p>
 
+      <div className="space-y-2">
+        <label htmlFor="consultation-reason" className="text-sm font-medium">{L('ما الذي تحتاج استشارة الطبيب بشأنه؟', 'What would you like to discuss with the doctor?')}</label>
+        <Textarea
+          id="consultation-reason"
+          value={consultationReason}
+          onChange={(event) => setConsultationReason(event.target.value.slice(0, 1000))}
+          placeholder={L('اكتب وصفًا مختصرًا لسبب الاستشارة (5 أحرف على الأقل)...', 'Briefly describe the reason for your consultation (at least 5 characters)...')}
+          maxLength={1000}
+          rows={3}
+          required
+        />
+        <p className="text-end text-xs text-muted-foreground">{consultationReason.length}/1000</p>
+      </div>
+
       <div className="space-y-2 rounded-lg border-2 border-primary/30 bg-primary/5 p-3">
         <p className="text-sm font-medium">
           {selectedSlot
@@ -107,7 +129,7 @@ export function BookingPanel({ doctorId, canBook, onBooked }: Props) {
         </p>
         <Button
           className="h-12 w-full text-base font-bold shadow-md"
-          disabled={busy || !canBook}
+          disabled={busy || !canBook || Boolean(selectedSlot && consultationReason.trim().length < 5)}
           onClick={handleBookingAction}
         >
           <CalendarClock className="me-2 h-5 w-5" />
