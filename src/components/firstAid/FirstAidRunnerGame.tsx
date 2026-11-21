@@ -94,6 +94,8 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
   const [choices, setChoices] = useState<Choice[]>(() => shuffleChoices(QUESTIONS[0].choices));
   const [lives, setLives] = useState(3);
   const [score, setScore] = useState(0);
+  const [runCoins, setRunCoins] = useState(0);
+  const [coinWave, setCoinWave] = useState(0);
   const [seconds, setSeconds] = useState(7);
   const [result, setResult] = useState<'correct' | 'wrong' | 'timeout' | null>(null);
   const answerLocked = useRef(false);
@@ -103,6 +105,12 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
   useEffect(() => {
     if (phase !== 'running') return;
     const deadline = Date.now() + 7000;
+    const collectCoin = () => {
+      setRunCoins((current) => current + 1);
+      setCoinWave((current) => current + 1);
+    };
+    collectCoin();
+    const coinPickupTimer = window.setInterval(collectCoin, 1250);
     const timer = window.setInterval(() => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setSeconds(remaining);
@@ -113,7 +121,10 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
         setPhase('feedback');
       }
     }, 100);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(coinPickupTimer);
+    };
   }, [phase, round]);
 
   const startRun = () => {
@@ -123,6 +134,7 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
     setChoices(shuffleChoices(QUESTIONS[0].choices));
     setLives(3);
     setScore(0);
+    setRunCoins(0);
     setSeconds(7);
     setResult(null);
     setPhase('running');
@@ -134,6 +146,7 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
     setResult(choice.correct ? 'correct' : 'wrong');
     if (choice.correct) {
       setScore((current) => current + 10);
+      setRunCoins((current) => current + 1);
       if (!rewardClaimed.current) {
         rewardClaimed.current = true;
         void onComplete('runner');
@@ -167,18 +180,31 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
 
   return (
     <section className="space-y-4" aria-label={ar('لعبة عداء الإنقاذ', 'Rescue runner game')}>
-      <div className="grid grid-cols-3 gap-2 text-center">
+      <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-4">
         <div className="rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('المسار', 'Course')}</span><b>{Math.min(round + (phase === 'won' ? 1 : 0), QUESTIONS.length)} / {QUESTIONS.length}</b></div>
         <div className="rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('النقاط', 'Score')}</span><b className="inline-flex items-center gap-1 text-amber-600"><Zap className="h-4 w-4" />{score}</b></div>
+        <div className="runner-coin-counter rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('الكوينز المجموعة', 'Coins collected')}</span><b className="inline-flex items-center gap-1 text-amber-600"><span aria-hidden="true">🪙</span>{runCoins}</b></div>
         <div className="rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('الحياة', 'Lives')}</span><span className="flex justify-center gap-1" aria-label={ar(`${lives} حيوات`, `${lives} lives`)}>{[0, 1, 2].map((heart) => <Heart key={heart} className={`h-5 w-5 ${heart < lives ? 'fill-rose-500 text-rose-500' : 'text-muted-foreground/40'}`} />)}</span></div>
       </div>
 
-      <div className={`runner-track relative overflow-hidden rounded-2xl border border-sky-300/40 bg-gradient-to-b from-sky-400/20 via-sky-200/10 to-amber-500/10 p-4 ${isJumping ? 'runner-track-jump' : ''}`}>
-        <div className="absolute inset-x-0 bottom-5 h-1 rounded-full bg-amber-700/40" />
-        <div className="runner-lane absolute inset-x-0 bottom-4 h-6 border-t-2 border-dashed border-amber-700/30" />
-        <div className={`runner-character relative z-10 text-5xl ${phase === 'running' ? 'runner-character-running' : ''} ${isJumping ? 'runner-character-jump' : ''}`} aria-hidden="true">🏃</div>
-        <div className={`runner-obstacle absolute bottom-6 end-[18%] text-4xl ${phase === 'running' ? 'runner-obstacle-moving' : ''}`} aria-hidden="true">🪨</div>
-        <p className="relative z-10 mt-3 text-xs font-semibold text-muted-foreground">{ar('أجب قبل الاصطدام بالعقبة!', 'Answer before you hit the obstacle!')}</p>
+      <div className={`runner-world relative overflow-hidden rounded-2xl border border-sky-300/40 bg-gradient-to-b from-sky-400/35 via-sky-200/15 to-amber-500/15 ${isJumping ? 'runner-track-jump' : ''}`}>
+        <div className="runner-sun absolute end-[16%] top-4 h-12 w-12 rounded-full bg-amber-200/70 blur-[1px]" aria-hidden="true" />
+        <div className="runner-mountains absolute inset-x-0 top-10 h-20" aria-hidden="true" />
+        <div className="runner-road absolute inset-x-0 bottom-[-38%] h-[92%]" aria-hidden="true">
+          <div className="runner-road-edge" />
+          <div className="runner-road-center" />
+          <div className="runner-road-dashes" />
+        </div>
+        <div className="runner-world-label absolute start-3 top-3 rounded-full border border-white/30 bg-slate-950/45 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">{ar('عالم الإنقاذ · المرحلة ', 'Rescue world · Stage ')}{round + 1}</div>
+        <div className={`runner-character absolute bottom-[19%] start-[15%] z-10 text-5xl sm:text-6xl ${phase === 'running' ? 'runner-character-running' : ''} ${isJumping ? 'runner-character-jump' : ''}`} aria-hidden="true"><span className="runner-avatar-shadow" />🏃</div>
+        {phase === 'running' && (
+          <div className="runner-coin-stream absolute inset-0 z-10 pointer-events-none" aria-hidden="true">
+            <span key={coinWave} className="runner-coin">🪙</span>
+          </div>
+        )}
+        <div className={`runner-obstacle absolute bottom-[22%] end-[18%] z-10 text-4xl sm:text-5xl ${phase === 'running' ? 'runner-obstacle-moving' : ''}`} aria-hidden="true"><span className="runner-obstacle-shadow" />🪨</div>
+        <div className="runner-distance absolute bottom-2 start-3 z-10 rounded-md bg-slate-950/45 px-2 py-1 text-[10px] font-bold text-white/90">{ar('سباق الإسعاف', 'First-aid sprint')}</div>
+        <p className="absolute bottom-2 end-3 z-10 text-[11px] font-semibold text-slate-800 dark:text-slate-100">{ar('أجب قبل الاصطدام بالعقبة!', 'Answer before you hit the obstacle!')}</p>
       </div>
 
       {phase === 'ready' ? (
@@ -191,7 +217,7 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
         <div className={`rounded-2xl border p-5 text-center ${phase === 'won' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
           <Trophy className={`mx-auto h-8 w-8 ${phase === 'won' ? 'text-amber-500' : 'text-muted-foreground'}`} />
           <h3 className="mt-2 text-xl font-black">{phase === 'won' ? ar('وصلت لخط النهاية!', 'You reached the finish!') : ar('انتهت المحاولة', 'Run over')}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{ar(`جمعت ${score} نقطة في الجري.`, `You scored ${score} runner points.`)} {ar('النقاط اليومية للعبة تُحتسب مرة واحدة.', 'Daily game XP is awarded once.')}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{ar(`جمعت ${score} نقطة و${runCoins} كوينز في الجولة.`, `You collected ${score} points and ${runCoins} coins this run.`)} {ar('النقاط اليومية للعبة تُحتسب مرة واحدة.', 'Daily game XP is awarded once.')}</p>
           <Button variant="outline" className="mt-4" onClick={startRun}>{ar('العب مرة أخرى', 'Run again')}</Button>
         </div>
       ) : (
