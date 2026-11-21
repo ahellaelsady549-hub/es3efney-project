@@ -6,12 +6,14 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import type { FirstAidGameId } from '@/hooks/useFirstAidProgress';
 
 type Choice = { ar: string; en: string; correct: boolean };
+type ObstacleKind = 'barrier' | 'flame' | 'medical-crate' | 'debris' | 'cone';
 type RunnerQuestion = {
   promptAr: string;
   promptEn: string;
   explanationAr: string;
   explanationEn: string;
   source: string;
+  obstacle: ObstacleKind;
   choices: Choice[];
 };
 
@@ -22,6 +24,7 @@ const QUESTIONS: RunnerQuestion[] = [
     explanationAr: 'تأكد من أمان المكان لك وللمصاب، واطلب المساعدة. لا تدخل طريقًا أو مكانًا خطرًا.',
     explanationEn: 'Check that the scene is safe for you and the casualty, and call for help. Do not enter a dangerous area.',
     source: 'IFRC First Aid Guidelines',
+    obstacle: 'barrier',
     choices: [
       { ar: 'أتأكد من أمان المكان أولًا', en: 'Check the scene is safe first', correct: true },
       { ar: 'أجري للمصاب فورًا دون النظر حولي', en: 'Run straight to the person without looking around', correct: false },
@@ -34,6 +37,7 @@ const QUESTIONS: RunnerQuestion[] = [
     explanationAr: 'برّد الحرق بمياه جارية نظيفة وباردة، ولا تضع الثلج أو الزبدة عليه. اطلب المساعدة للحروق الكبيرة أو الخطيرة.',
     explanationEn: 'Cool the burn with clean, cool running water. Do not use ice or butter. Seek help for large or serious burns.',
     source: 'American Red Cross: Burns',
+    obstacle: 'flame',
     choices: [
       { ar: 'أضع زبدة أو معجون أسنان', en: 'Apply butter or toothpaste', correct: false },
       { ar: 'أضع الثلج مباشرة على الجلد', en: 'Put ice directly on the skin', correct: false },
@@ -46,6 +50,7 @@ const QUESTIONS: RunnerQuestion[] = [
     explanationAr: 'اضغط مباشرة وباستمرار على موضع النزيف بضمادة أو قطعة قماش نظيفة، واتصل بالإسعاف 123 للحالة الشديدة.',
     explanationEn: 'Apply firm, continuous direct pressure with a clean dressing or cloth, and call emergency services (123) for severe bleeding.',
     source: 'IFRC First Aid Guidelines',
+    obstacle: 'medical-crate',
     choices: [
       { ar: 'أضغط مباشرة على الجرح بضمادة نظيفة وأطلب المساعدة', en: 'Press the wound with a clean dressing and get help', correct: true },
       { ar: 'أرفع الضمادة كل ثوانٍ لأفحص النزيف', en: 'Lift the dressing every few seconds to check', correct: false },
@@ -58,6 +63,7 @@ const QUESTIONS: RunnerQuestion[] = [
     explanationAr: 'اطلب من شخص الاتصال بالإسعاف 123 وإحضار جهاز AED إن توفر. ابدأ ضغطات الصدر واتبع تعليمات موظف الطوارئ.',
     explanationEn: 'Ask someone to call emergency services (123) and get an AED if available. Start chest compressions and follow the dispatcher.',
     source: 'American Heart Association: Hands-Only CPR',
+    obstacle: 'debris',
     choices: [
       { ar: 'أتركه وحده وأبحث عن ماء', en: 'Leave them alone to find water', correct: false },
       { ar: 'أطلب الإسعاف 123 وأبدأ الاستجابة المناسبة', en: 'Call 123 and begin the appropriate response', correct: true },
@@ -70,6 +76,7 @@ const QUESTIONS: RunnerQuestion[] = [
     explanationAr: 'اتصل بالإسعاف المصري على 123، واذكر الموقع بوضوح واتبع تعليمات موظف الطوارئ.',
     explanationEn: 'Call the Egyptian ambulance service at 123, state the location clearly, and follow the dispatcher’s instructions.',
     source: 'Egyptian Ambulance Organization',
+    obstacle: 'cone',
     choices: [
       { ar: '123 الإسعاف', en: '123 ambulance', correct: true },
       { ar: 'أنتظر حتى يتصرف المارّة', en: 'Wait for bystanders to decide', correct: false },
@@ -87,6 +94,79 @@ const SOURCES: Record<string, string> = {
 
 const shuffleChoices = (choices: Choice[]) => [...choices].sort(() => Math.random() - 0.5);
 
+const ObstacleModel = ({ kind }: { kind: ObstacleKind }) => {
+  if (kind === 'barrier') return (
+    <svg viewBox="0 0 120 88" className="runner-obstacle-model" role="img" aria-label="Road barrier">
+      <ellipse cx="60" cy="79" rx="48" ry="7" fill="#0f172a" opacity=".35" />
+      <path d="M25 55h10v22H25zM85 55h10v22H85z" fill="#334155" />
+      <path d="M15 30 25 20h78v30l-9 9H15z" fill="#dc2626" stroke="#7f1d1d" strokeWidth="3" />
+      <path d="M25 20v30M49 20v30M73 20v30M97 20v30" stroke="#f8fafc" strokeWidth="9" />
+      <path d="m103 20 9 8v29l-9-7z" fill="#991b1b" />
+    </svg>
+  );
+  if (kind === 'flame') return (
+    <svg viewBox="0 0 100 100" className="runner-obstacle-model" role="img" aria-label="Flames">
+      <ellipse cx="50" cy="88" rx="36" ry="7" fill="#0f172a" opacity=".35" />
+      <path d="M50 10c5 18-12 21-3 36 4-10 12-11 12-23 17 18 25 29 21 44-3 15-15 24-30 24S21 82 20 67c-1-13 7-23 17-35-2 15 5 17 9 18 8-11 3-24 4-40Z" fill="#ef4444" />
+      <path d="M52 42c2 12-8 17-4 27 2-5 8-6 8-14 8 10 11 16 8 23-2 7-8 11-15 11-8 0-14-5-15-12-1-7 4-13 10-19 0 7 4 9 6 9 4-7 1-15 2-25Z" fill="#fbbf24" />
+      <path d="M49 66c5 5 8 9 7 14-1 4-4 6-8 6s-7-3-7-7c0-4 3-8 8-13Z" fill="#fff7ed" />
+    </svg>
+  );
+  if (kind === 'medical-crate') return (
+    <svg viewBox="0 0 110 100" className="runner-obstacle-model" role="img" aria-label="Medical supply box">
+      <ellipse cx="54" cy="89" rx="39" ry="7" fill="#0f172a" opacity=".35" />
+      <path d="m20 29 15-12h57L78 29z" fill="#a7f3d0" stroke="#047857" strokeWidth="3" />
+      <path d="M20 29h58v52H20z" fill="#10b981" stroke="#047857" strokeWidth="3" />
+      <path d="m78 29 14-12v51L78 81z" fill="#047857" stroke="#065f46" strokeWidth="3" />
+      <path d="M43 38h13v10h10v13H56v10H43V61H33V48h10z" fill="#f8fafc" />
+    </svg>
+  );
+  if (kind === 'debris') return (
+    <svg viewBox="0 0 120 90" className="runner-obstacle-model" role="img" aria-label="Road debris">
+      <ellipse cx="60" cy="79" rx="48" ry="7" fill="#0f172a" opacity=".35" />
+      <path d="m12 62 12-22 20-5 9-20 18 8 11-8 23 20 3 24-18 10-28-4-20 9-21-4z" fill="#64748b" stroke="#334155" strokeWidth="4" />
+      <path d="m44 35 9 10-8 10-14-5zM70 26l11 8-7 12-13-4zM82 57l15-3 2 11-17 6z" fill="#94a3b8" opacity=".8" />
+      <path d="m23 61 15 3M59 66l12-6" stroke="#cbd5e1" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+  return (
+    <svg viewBox="0 0 90 110" className="runner-obstacle-model" role="img" aria-label="Road cone">
+      <ellipse cx="45" cy="98" rx="33" ry="7" fill="#0f172a" opacity=".35" />
+      <path d="m29 78 15-57 17 57z" fill="#f97316" stroke="#9a3412" strokeWidth="4" />
+      <path d="m34 60 22 2-4 13H31z" fill="#f8fafc" />
+      <path d="M18 78h54v14H18z" fill="#ea580c" stroke="#9a3412" strokeWidth="4" />
+      <path d="m44 30 5 0" stroke="#fed7aa" strokeWidth="3" strokeLinecap="round" />
+    </svg>
+  );
+};
+
+const RunnerAvatar = ({ lane, className = '' }: { lane: number; className?: string }) => (
+  <svg viewBox="0 0 100 150" className={`runner-avatar ${className}`} style={{ left: `${50 + lane * 18}%` }} aria-hidden="true">
+    <ellipse cx="50" cy="143" rx="26" ry="5" fill="#0f172a" opacity=".38" />
+    <path className="runner-leg runner-leg-left" d="M39 99 36 122 27 137q-1 5 5 5h18l5-8-7-13 8-18z" fill="#1e293b" stroke="#0f172a" strokeWidth="3" />
+    <path className="runner-leg runner-leg-right" d="m59 99 6 21 12 13q4 5-2 8H57l-8-8 5-13-8-20z" fill="#334155" stroke="#0f172a" strokeWidth="3" />
+    <path d="M30 136h18l6 5q1 4-3 5H26q-4-2 0-7zM58 135h18l9 5q2 4-3 5H59q-5-2-1-7z" fill="#f8fafc" stroke="#334155" strokeWidth="3" />
+    <path d="M35 56q15-10 31 0l8 40q-22 14-48 0z" fill="#0ea5e9" stroke="#075985" strokeWidth="4" />
+    <path d="m39 61-13 15-6 17q-1 6 5 7 5 1 7-5l10-17M63 61l13 14 7 17q1 6-5 8-5 1-7-5L60 78" fill="#f0b18f" stroke="#9a5f47" strokeWidth="4" strokeLinecap="round" />
+    <path d="M47 54v39M53 55v39" stroke="#bae6fd" strokeWidth="3" opacity=".75" />
+    <path d="M35 62q15 13 31 0" fill="none" stroke="#7dd3fc" strokeWidth="3" opacity=".8" />
+    <path d="M37 37q2-19 17-21 17 1 18 21l-5 16q-11 10-24 0z" fill="#a56647" stroke="#713f2c" strokeWidth="4" />
+    <path d="M35 37q0-24 19-25 19 1 20 25-8-8-18-8-10 8-21 8z" fill="#1e293b" stroke="#0f172a" strokeWidth="4" />
+    <path d="M45 27q11-10 23 0" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
+    <path d="M39 98q11 6 23 0" stroke="#f8fafc" strokeWidth="3" opacity=".75" />
+  </svg>
+);
+
+const RunnerCoin = ({ lane }: { lane: number }) => (
+  <svg viewBox="0 0 64 64" className="runner-coin" style={{ left: `${50 + lane * 18}%` }} role="img" aria-label="Coin">
+    <ellipse cx="34" cy="36" rx="23" ry="25" fill="#b45309" />
+    <ellipse cx="31" cy="30" rx="23" ry="25" fill="url(#rescue-coin-face)" stroke="#fef3c7" strokeWidth="3" />
+    <ellipse cx="31" cy="30" rx="17" ry="19" fill="none" stroke="#f59e0b" strokeWidth="3" />
+    <path d="M28 17h7v8h8v8h-8v9h-7v-9h-8v-8h8z" fill="#b45309" />
+    <defs><linearGradient id="rescue-coin-face" x1="13" x2="51" y1="10" y2="52" gradientUnits="userSpaceOnUse"><stop stopColor="#fef08a" /><stop offset=".48" stopColor="#fbbf24" /><stop offset="1" stopColor="#d97706" /></linearGradient></defs>
+  </svg>
+);
+
 export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstAidGameId) => Promise<unknown> }) {
   const { L } = useLanguage();
   const [phase, setPhase] = useState<'ready' | 'running' | 'feedback' | 'won' | 'lost'>('ready');
@@ -96,21 +176,31 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
   const [score, setScore] = useState(0);
   const [runCoins, setRunCoins] = useState(0);
   const [coinWave, setCoinWave] = useState(0);
+  const [lane, setLane] = useState(0);
+  const [coinLane, setCoinLane] = useState(0);
   const [seconds, setSeconds] = useState(7);
   const [result, setResult] = useState<'correct' | 'wrong' | 'timeout' | null>(null);
   const answerLocked = useRef(false);
   const rewardClaimed = useRef(false);
+  const laneRef = useRef(0);
   const question = QUESTIONS[round];
 
   useEffect(() => {
     if (phase !== 'running') return;
     const deadline = Date.now() + 7000;
-    const collectCoin = () => {
-      setRunCoins((current) => current + 1);
+    const pendingCoinPickups = new Set<number>();
+    const spawnCoin = () => {
+      const incomingLane = Math.floor(Math.random() * 3) - 1;
+      setCoinLane(incomingLane);
       setCoinWave((current) => current + 1);
+      const pickupTimeout = window.setTimeout(() => {
+        pendingCoinPickups.delete(pickupTimeout);
+        if (laneRef.current === incomingLane) setRunCoins((current) => current + 1);
+      }, 1120);
+      pendingCoinPickups.add(pickupTimeout);
     };
-    collectCoin();
-    const coinPickupTimer = window.setInterval(collectCoin, 1250);
+    spawnCoin();
+    const coinPickupTimer = window.setInterval(spawnCoin, 1450);
     const timer = window.setInterval(() => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setSeconds(remaining);
@@ -124,8 +214,30 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
     return () => {
       window.clearInterval(timer);
       window.clearInterval(coinPickupTimer);
+      pendingCoinPickups.forEach((timeout) => window.clearTimeout(timeout));
     };
   }, [phase, round]);
+
+  useEffect(() => {
+    if (phase !== 'running') return;
+    const move = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      if (!['arrowleft', 'arrowright', 'a', 'd'].includes(key)) return;
+      event.preventDefault();
+      const direction = key === 'arrowleft' || key === 'a' ? -1 : 1;
+      const nextLane = Math.max(-1, Math.min(1, laneRef.current + direction));
+      laneRef.current = nextLane;
+      setLane(nextLane);
+    };
+    window.addEventListener('keydown', move);
+    return () => window.removeEventListener('keydown', move);
+  }, [phase]);
+
+  const moveToLane = (nextLane: number) => {
+    const boundedLane = Math.max(-1, Math.min(1, nextLane));
+    laneRef.current = boundedLane;
+    setLane(boundedLane);
+  };
 
   const startRun = () => {
     answerLocked.current = false;
@@ -135,6 +247,8 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
     setLives(3);
     setScore(0);
     setRunCoins(0);
+    laneRef.current = 0;
+    setLane(0);
     setSeconds(7);
     setResult(null);
     setPhase('running');
@@ -187,41 +301,8 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
         <div className="rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('الحياة', 'Lives')}</span><span className="flex justify-center gap-1" aria-label={ar(`${lives} حيوات`, `${lives} lives`)}>{[0, 1, 2].map((heart) => <Heart key={heart} className={`h-5 w-5 ${heart < lives ? 'fill-rose-500 text-rose-500' : 'text-muted-foreground/40'}`} />)}</span></div>
       </div>
 
-      <div className={`runner-world relative overflow-hidden rounded-2xl border border-sky-300/40 bg-gradient-to-b from-sky-400/35 via-sky-200/15 to-amber-500/15 ${isJumping ? 'runner-track-jump' : ''}`}>
-        <div className="runner-sun absolute end-[16%] top-4 h-12 w-12 rounded-full bg-amber-200/70 blur-[1px]" aria-hidden="true" />
-        <div className="runner-mountains absolute inset-x-0 top-10 h-20" aria-hidden="true" />
-        <div className="runner-road absolute inset-x-0 bottom-[-38%] h-[92%]" aria-hidden="true">
-          <div className="runner-road-edge" />
-          <div className="runner-road-center" />
-          <div className="runner-road-dashes" />
-        </div>
-        <div className="runner-world-label absolute start-3 top-3 rounded-full border border-white/30 bg-slate-950/45 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">{ar('عالم الإنقاذ · المرحلة ', 'Rescue world · Stage ')}{round + 1}</div>
-        <div className={`runner-character absolute bottom-[19%] start-[15%] z-10 text-5xl sm:text-6xl ${phase === 'running' ? 'runner-character-running' : ''} ${isJumping ? 'runner-character-jump' : ''}`} aria-hidden="true"><span className="runner-avatar-shadow" />🏃</div>
-        {phase === 'running' && (
-          <div className="runner-coin-stream absolute inset-0 z-10 pointer-events-none" aria-hidden="true">
-            <span key={coinWave} className="runner-coin">🪙</span>
-          </div>
-        )}
-        <div className={`runner-obstacle absolute bottom-[22%] end-[18%] z-10 text-4xl sm:text-5xl ${phase === 'running' ? 'runner-obstacle-moving' : ''}`} aria-hidden="true"><span className="runner-obstacle-shadow" />🪨</div>
-        <div className="runner-distance absolute bottom-2 start-3 z-10 rounded-md bg-slate-950/45 px-2 py-1 text-[10px] font-bold text-white/90">{ar('سباق الإسعاف', 'First-aid sprint')}</div>
-        <p className="absolute bottom-2 end-3 z-10 text-[11px] font-semibold text-slate-800 dark:text-slate-100">{ar('أجب قبل الاصطدام بالعقبة!', 'Answer before you hit the obstacle!')}</p>
-      </div>
-
-      {phase === 'ready' ? (
-        <div className="rounded-2xl border bg-primary/5 p-5 text-center">
-          <h3 className="text-xl font-black">{ar('عداء الإنقاذ', 'Rescue Runner')}</h3>
-          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{ar('قبل كل قفزة يظهر سؤال بثلاثة اختيارات. لديك ٧ ثوانٍ. الإجابة الصحيحة تقفز بك وتضيف ١٠ نقاط، والخطأ أو انتهاء الوقت يخصم حياة ويشرح المعلومة.', 'A three-choice first-aid question appears before each jump. You have 7 seconds. A correct answer jumps over the obstacle and adds 10 points; a wrong answer or timeout costs a life and explains the fact.')}</p>
-          <Button className="mt-4" onClick={startRun}><Zap className="me-2 h-4 w-4" />{ar('ابدأ الجري', 'Start running')}</Button>
-        </div>
-      ) : phase === 'won' || phase === 'lost' ? (
-        <div className={`rounded-2xl border p-5 text-center ${phase === 'won' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
-          <Trophy className={`mx-auto h-8 w-8 ${phase === 'won' ? 'text-amber-500' : 'text-muted-foreground'}`} />
-          <h3 className="mt-2 text-xl font-black">{phase === 'won' ? ar('وصلت لخط النهاية!', 'You reached the finish!') : ar('انتهت المحاولة', 'Run over')}</h3>
-          <p className="mt-1 text-sm text-muted-foreground">{ar(`جمعت ${score} نقطة و${runCoins} كوينز في الجولة.`, `You collected ${score} points and ${runCoins} coins this run.`)} {ar('النقاط اليومية للعبة تُحتسب مرة واحدة.', 'Daily game XP is awarded once.')}</p>
-          <Button variant="outline" className="mt-4" onClick={startRun}>{ar('العب مرة أخرى', 'Run again')}</Button>
-        </div>
-      ) : (
-        <div className="space-y-4">
+      {phase !== 'ready' && phase !== 'won' && phase !== 'lost' && (
+        <div className="space-y-4" aria-live="polite">
           <div className="flex items-center gap-3 rounded-xl border p-3">
             <Timer className={`h-5 w-5 ${seconds <= 2 ? 'text-destructive' : 'text-primary'}`} />
             <div className="min-w-0 flex-1"><p className="font-bold">{ar(question.promptAr, question.promptEn)}</p><Progress value={(seconds / 7) * 100} className="mt-2 h-2" aria-label={ar('الوقت المتبقي للسؤال', 'Question time remaining')} /></div>
@@ -239,7 +320,7 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
 
           {phase === 'feedback' && result && (
             <div className={`rounded-xl border p-4 ${result === 'correct' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
-              <p className="font-bold">{result === 'correct' ? ar('قفزة ناجحة! +١٠ نقاط', 'Great jump! +10 points') : result === 'timeout' ? ar('انتهى الوقت وخسرت حياة', 'Time ran out; you lost a life') : ar('إجابة غير صحيحة وخسرت حياة', 'Incorrect answer; you lost a life')}</p>
+              <p className="font-bold">{result === 'correct' ? ar('قفزة ناجحة! +١٠ نقاط +١ كوين', 'Great jump! +10 points +1 coin') : result === 'timeout' ? ar('انتهى الوقت واصطدمت بالعقبة وخسرت حياة', 'Time ran out; you hit the obstacle and lost a life') : ar('اصطدمت بالعقبة وخسرت حياة', 'You hit the obstacle and lost a life')}</p>
               <p className="mt-1 text-sm leading-6">{ar(question.explanationAr, question.explanationEn)}</p>
               {result !== 'correct' && (
                 <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
@@ -253,6 +334,47 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
           )}
         </div>
       )}
+
+      <div className={`runner-world relative overflow-hidden rounded-2xl border border-sky-300/40 bg-gradient-to-b from-sky-400/35 via-sky-200/15 to-amber-500/15 ${phase === 'running' ? 'runner-world-running' : ''} ${isJumping ? 'runner-track-jump' : ''} ${phase === 'feedback' && result !== 'correct' ? 'runner-world-crash' : ''}`}>
+        <div className="runner-sun absolute end-[16%] top-4 h-12 w-12 rounded-full bg-amber-200/70 blur-[1px]" aria-hidden="true" />
+        <div className="runner-mountains absolute inset-x-0 top-10 h-20" aria-hidden="true" />
+        <div className="runner-road absolute inset-x-0 bottom-[-38%] h-[92%]" aria-hidden="true">
+          <div className="runner-road-edge" />
+          <div className="runner-road-lane runner-road-lane-left" />
+          <div className="runner-road-lane runner-road-lane-right" />
+          <div className="runner-road-dashes" />
+        </div>
+        <div className="runner-world-label absolute start-3 top-3 rounded-full border border-white/30 bg-slate-950/45 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">{ar('عالم الإنقاذ · المرحلة ', 'Rescue world · Stage ')}{round + 1}</div>
+        <div className="runner-character"><RunnerAvatar lane={lane} className={`${phase === 'running' ? 'runner-avatar-running' : ''} ${isJumping ? 'runner-avatar-jump' : ''}`} /></div>
+        {phase === 'running' && (
+          <div className="runner-coin-stream absolute inset-0 z-10 pointer-events-none" aria-hidden="true">
+            <RunnerCoin key={coinWave} lane={coinLane} />
+          </div>
+        )}
+        <div key={`obstacle-${round}`} className={`runner-obstacle ${phase === 'running' ? 'runner-obstacle-moving' : ''} ${isJumping ? 'runner-obstacle-cleared' : ''} ${phase === 'feedback' && result !== 'correct' ? 'runner-obstacle-hit' : ''}`} aria-hidden="true"><ObstacleModel kind={question.obstacle} /></div>
+        {phase === 'feedback' && result !== 'correct' && <div className="runner-crash-flash absolute inset-0 z-20" aria-hidden="true" />}
+        <div className="runner-world-label runner-world-label-bottom absolute bottom-2 start-3 z-20 rounded-md bg-slate-950/50 px-2 py-1 text-[10px] font-bold text-white">{ar('منظور المسعف', 'Responder view')}</div>
+        <p className="absolute bottom-2 end-3 z-20 text-[11px] font-semibold text-slate-800 dark:text-slate-100">{ar('اختر المسار واجب عن السؤال!', 'Change lanes and answer!')}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2" aria-label={ar('تحريك المسعف بين المسارات', 'Move the runner between lanes')}>
+        {[-1, 0, 1].map((targetLane) => <Button key={targetLane} type="button" variant={lane === targetLane ? 'default' : 'outline'} size="sm" disabled={phase !== 'running'} onClick={() => moveToLane(targetLane)} className="h-10">{targetLane === -1 ? ar('مسار يسار', 'Left lane') : targetLane === 0 ? ar('الوسط', 'Center') : ar('مسار يمين', 'Right lane')}</Button>)}
+      </div>
+
+      {phase === 'ready' ? (
+        <div className="rounded-2xl border bg-primary/5 p-5 text-center">
+          <h3 className="text-xl font-black">{ar('عداء الإنقاذ', 'Rescue Runner')}</h3>
+          <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{ar('منظور خلف المسعف وثلاثة مسارات. بدّل المسار بالأزرار أو بأسهم الكيبورد واجمع العملات التي تمر في مسارك. قبل كل عقبة يظهر سؤال بثلاثة اختيارات ولديك ٧ ثوانٍ؛ الإجابة الصحيحة تقفز فوق العقبة وتضيف نقاطًا وعملة مكافأة، والخطأ أو انتهاء الوقت يخصم حياة ويشرح المعلومة.', 'Run from a third-person view across three lanes. Switch lanes with buttons or arrow keys to collect coins in your path. Each obstacle brings a three-choice first-aid question with 7 seconds to answer; a correct answer jumps over it for points and a bonus coin, while a wrong answer or timeout costs a life and explains the fact.')}</p>
+          <Button className="mt-4" onClick={startRun}><Zap className="me-2 h-4 w-4" />{ar('ابدأ الجري', 'Start running')}</Button>
+        </div>
+      ) : phase === 'won' || phase === 'lost' ? (
+        <div className={`rounded-2xl border p-5 text-center ${phase === 'won' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
+          <Trophy className={`mx-auto h-8 w-8 ${phase === 'won' ? 'text-amber-500' : 'text-muted-foreground'}`} />
+          <h3 className="mt-2 text-xl font-black">{phase === 'won' ? ar('وصلت لخط النهاية!', 'You reached the finish!') : ar('انتهت المحاولة', 'Run over')}</h3>
+          <p className="mt-1 text-sm text-muted-foreground">{ar(`جمعت ${score} نقطة و${runCoins} كوينز في الجولة.`, `You collected ${score} points and ${runCoins} coins this run.`)} {ar('النقاط اليومية للعبة تُحتسب مرة واحدة.', 'Daily game XP is awarded once.')}</p>
+          <Button variant="outline" className="mt-4" onClick={startRun}>{ar('العب مرة أخرى', 'Run again')}</Button>
+        </div>
+      ) : null}
     </section>
   );
 }
