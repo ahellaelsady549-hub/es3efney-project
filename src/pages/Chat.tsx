@@ -23,7 +23,8 @@ import {
   Shield,
   Reply,
   Smile,
-  X
+  X,
+  Trash2,
 } from 'lucide-react';
 
 interface Message {
@@ -35,6 +36,7 @@ interface Message {
   is_flagged: boolean;
   flag_reason: string | null;
   reply_to_message_id: string | null;
+  deleted_at?: string | null;
   created_at: string;
 }
 
@@ -81,59 +83,9 @@ const getAudioMimeType = (fileType: string | null, fileUrl: string | null) => {
   return (extension && mimeTypes[extension]) || 'audio/wav';
 };
 
-const convertVoiceRecordingToWav = async (recording: Blob): Promise<File> => {
-  const AudioContextConstructor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-  if (!AudioContextConstructor) throw new Error('Audio decoding is not supported in this browser');
-  const audioContext = new AudioContextConstructor();
-  try {
-    const decoded = await audioContext.decodeAudioData(await recording.arrayBuffer());
-    const targetSampleRate = Math.min(decoded.sampleRate, 16000);
-    const ratio = decoded.sampleRate / targetSampleRate;
-    const outputLength = Math.max(1, Math.floor(decoded.length / ratio));
-    const monoSamples = new Float32Array(outputLength);
-    const channelData = Array.from({ length: decoded.numberOfChannels }, (_, channel) => decoded.getChannelData(channel));
-
-    for (let outputIndex = 0; outputIndex < outputLength; outputIndex += 1) {
-      const start = Math.floor(outputIndex * ratio);
-      const end = Math.min(decoded.length, Math.floor((outputIndex + 1) * ratio));
-      let sum = 0;
-      let sampleCount = 0;
-      for (let inputIndex = start; inputIndex < end; inputIndex += 1) {
-        for (const channel of channelData) sum += channel[inputIndex] || 0;
-        sampleCount += channelData.length;
-      }
-      monoSamples[outputIndex] = sampleCount ? sum / sampleCount : 0;
-    }
-
-    const wavBuffer = new ArrayBuffer(44 + monoSamples.length * 2);
-    const view = new DataView(wavBuffer);
-    const writeText = (offset: number, value: string) => {
-      for (let index = 0; index < value.length; index += 1) view.setUint8(offset + index, value.charCodeAt(index));
-    };
-
-    writeText(0, 'RIFF');
-    view.setUint32(4, 36 + monoSamples.length * 2, true);
-    writeText(8, 'WAVE');
-    writeText(12, 'fmt ');
-    view.setUint32(16, 16, true);
-    view.setUint16(20, 1, true);
-    view.setUint16(22, 1, true);
-    view.setUint32(24, targetSampleRate, true);
-    view.setUint32(28, targetSampleRate * 2, true);
-    view.setUint16(32, 2, true);
-    view.setUint16(34, 16, true);
-    writeText(36, 'data');
-    view.setUint32(40, monoSamples.length * 2, true);
-
-    for (let index = 0; index < monoSamples.length; index += 1) {
-      const sample = Math.max(-1, Math.min(1, monoSamples[index]));
-      view.setInt16(44 + index * 2, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
-    }
-
-    return new File([wavBuffer], `voice-${Date.now()}.wav`, { type: 'audio/wav' });
-  } finally {
-    await audioContext.close().catch(() => undefined);
-  }
+const formatAudioTime = (seconds: number) => {
+  const safeSeconds = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  return `${Math.floor(safeSeconds / 60)}:${String(safeSeconds % 60).padStart(2, '0')}`;
 };
 
 const VoiceMessagePlayer = ({ src, mimeType, isOwn, L, onError }: { src: string; mimeType: string; isOwn: boolean; L: (ar: string, en: string) => string; onError: () => void }) => (
@@ -145,7 +97,7 @@ const VoiceMessagePlayer = ({ src, mimeType, isOwn, L, onError }: { src: string;
       <div className="mb-1 text-xs font-semibold">{L('رسالة صوتية', 'Voice message')}</div>
       <audio
         controls
-        preload="auto"
+        preload="none"
         onError={(event) => {
           console.error('Voice message playback failed:', event.currentTarget.error?.code, event.currentTarget.error?.message);
           onError();
@@ -191,6 +143,7 @@ const Chat = () => {
   const [processingVoice, setProcessingVoice] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [sendingMessage, setSendingMessage] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => { const t = setInterval(() => setTick((x) => x + 1), 30000); return () => clearInterval(t); }, []);
   useEffect(() => {
@@ -328,8 +281,24 @@ const Chat = () => {
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) audioChunksRef.current.push(event.data);
       };
+      recorder.onerror = () => {
+        recorder.onstop = null;
+        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        audioChunksRef.current = [];
+        recordingStartedAtRef.current = null;
+        setIsRecording(false);
+        setRecordingSeconds(0);
+        toast({
+          title: L('توقف التسجيل الصوتي', 'Voice recording stopped'),
+          description: L('تحقق من إذن الميكروفون ثم حاول مرة أخرى.', 'Check microphone permission and try again.'),
+          variant: 'destructive',
+        });
+      };
       recorder.onstop = async () => {
-        const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const originalType = (recorder.mimeType || audioChunksRef.current[0]?.type || 'audio/webm').split(';')[0].toLowerCase();
+        const blob = new Blob(audioChunksRef.current, { type: originalType });
         mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
         mediaStreamRef.current = null;
         mediaRecorderRef.current = null;
@@ -339,24 +308,27 @@ const Chat = () => {
         setRecordingSeconds(0);
         if (!blob.size) return;
 
-        const originalType = blob.type || 'audio/webm';
-        const fileExtension = originalType.includes('mp4') ? 'm4a' : originalType.includes('ogg') ? 'ogg' : 'webm';
-        const originalFile = new File([blob], `voice-source-${Date.now()}.${fileExtension}`, { type: originalType });
+        const fileExtension = originalType.includes('mp4') ? 'm4a'
+          : originalType.includes('ogg') ? 'ogg'
+            : originalType.includes('mpeg') ? 'mp3'
+              : originalType.includes('aac') ? 'aac'
+                : 'webm';
+        const voiceFile = new File([blob], `voice-${Date.now()}.${fileExtension}`, { type: originalType });
         setProcessingVoice(true);
         try {
-          await sendFile(await convertVoiceRecordingToWav(blob));
+          await sendFile(voiceFile);
         } catch (error) {
-          console.error('Could not normalize voice recording to WAV; sending the original recording:', error);
+          console.error('Could not send the voice recording:', error);
           toast({
-            title: L('تعذر تجهيز الصوت للصيغة القياسية', 'Could not normalize the recording'),
-            description: L('سيتم إرسال التسجيل الأصلي.', 'The original recording will be sent.'),
+            title: L('تعذر إرسال الرسالة الصوتية', 'Could not send the voice message'),
+            description: getReadableError(error),
+            variant: 'destructive',
           });
-          await sendFile(originalFile);
         } finally {
           setProcessingVoice(false);
         }
       };
-      recorder.start();
+      recorder.start(1000);
       recordingStartedAtRef.current = Date.now();
       setRecordingSeconds(0);
       setIsRecording(true);
@@ -536,6 +508,45 @@ const Chat = () => {
     void loadReactions();
   };
 
+  const deleteMessage = async (message: Message) => {
+    if (!user || message.sender_id !== user.id || deletingMessageId) return;
+    setDeletingMessageId(message.id);
+    try {
+      const { data, error } = await supabase.rpc('delete_own_chat_message', { _message_id: message.id }).single();
+      if (error) throw error;
+      if (!data) throw new Error(L('لم يتم العثور على الرسالة', 'Message was not found'));
+
+      setMessages((current) => current.map((item) => item.id === message.id
+        ? { ...item, content: null, file_url: null, file_type: null, deleted_at: new Date().toISOString() }
+        : item));
+      setMessageReactions((current) => {
+        const next = { ...current };
+        delete next[message.id];
+        return next;
+      });
+      if (replyToMessage?.id === message.id) setReplyToMessage(null);
+      setReactionMenuMessageId(null);
+
+      if (data.storage_path) {
+        const { error: storageError } = await supabase.storage.from('chat-files').remove([data.storage_path]);
+        if (storageError) {
+          console.error('Message deleted but its media cleanup failed:', storageError);
+          toast({
+            title: L('تم حذف الرسالة', 'Message deleted'),
+            description: L('تعذر حذف الملف المرفق من التخزين.', 'The attached file could not be removed from storage.'),
+          });
+          return;
+        }
+      }
+      toast({ title: L('تم حذف الرسالة', 'Message deleted') });
+    } catch (error) {
+      console.error('Could not delete chat message:', error);
+      toast({ title: L('تعذر حذف الرسالة', 'Could not delete message'), description: getReadableError(error), variant: 'destructive' });
+    } finally {
+      setDeletingMessageId(null);
+    }
+  };
+
   const subscribeToMessages = () => {
     const channel = supabase
       .channel(`messages-${conversationId}`)
@@ -551,6 +562,15 @@ const Chat = () => {
           setMessages(prev => [...prev, payload.new as Message]);
         }
       )
+      .on('postgres_changes', {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'messages',
+        filter: `conversation_id=eq.${conversationId}`,
+      }, (payload) => {
+        const updatedMessage = payload.new as Message;
+        setMessages((current) => current.map((message) => message.id === updatedMessage.id ? updatedMessage : message));
+      })
       .subscribe();
 
     return () => {
@@ -720,6 +740,10 @@ const Chat = () => {
                       </p>
                     </div>
                   )}
+                  {message.deleted_at ? (
+                    <p className="text-sm italic text-muted-foreground">{L('تم حذف هذه الرسالة', 'This message was deleted')}</p>
+                  ) : (
+                    <>
                   {message.content && <p className="text-sm whitespace-pre-wrap">{message.content}</p>}
                   {message.file_url && (
                     <div className="mt-2 min-w-0">
@@ -766,6 +790,8 @@ const Chat = () => {
                       {fileError && fileUrl && <button type="button" onClick={() => void retrySignedFile(message)} className="mt-1 block text-xs underline">{L('إعادة تحميل', 'Reload')}</button>}
                     </div>
                   )}
+                    </>
+                  )}
                   <span className={`text-xs ${isOwn ? 'text-primary-foreground/70' : 'text-muted-foreground'} mt-1 block`}>
                     {new Date(message.created_at).toLocaleTimeString('ar-EG', { 
                       hour: '2-digit', 
@@ -786,7 +812,7 @@ const Chat = () => {
                       ))}
                     </div>
                   )}
-                  {openSession && !banned && (
+                  {openSession && !banned && !message.deleted_at && (
                     <div className="mt-1 flex justify-end gap-1">
                       <Button
                         type="button"
@@ -820,6 +846,22 @@ const Chat = () => {
                           </div>
                         )}
                       </div>
+                    </div>
+                  )}
+                  {isOwn && !message.deleted_at && (
+                    <div className="mt-1 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                        onClick={() => void deleteMessage(message)}
+                        disabled={Boolean(deletingMessageId)}
+                        aria-label={L('حذف الرسالة', 'Delete message')}
+                      >
+                        <Trash2 className="me-1 h-3.5 w-3.5" />
+                        {deletingMessageId === message.id ? L('جاري الحذف', 'Deleting') : L('حذف', 'Delete')}
+                      </Button>
                     </div>
                   )}
                 </Card>

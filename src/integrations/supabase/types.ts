@@ -787,34 +787,40 @@ export type Database = {
           content: string | null
           conversation_id: string
           created_at: string
+          deleted_at: string | null
           file_type: string | null
           file_url: string | null
           flag_reason: string | null
           id: string
           is_flagged: boolean | null
           sender_id: string
+          reply_to_message_id: string | null
         }
         Insert: {
           content?: string | null
           conversation_id: string
           created_at?: string
+          deleted_at?: string | null
           file_type?: string | null
           file_url?: string | null
           flag_reason?: string | null
           id?: string
           is_flagged?: boolean | null
           sender_id: string
+          reply_to_message_id?: string | null
         }
         Update: {
           content?: string | null
           conversation_id?: string
           created_at?: string
+          deleted_at?: string | null
           file_type?: string | null
           file_url?: string | null
           flag_reason?: string | null
           id?: string
           is_flagged?: boolean | null
           sender_id?: string
+          reply_to_message_id?: string | null
         }
         Relationships: [
           {
@@ -1150,6 +1156,10 @@ export type Database = {
       }
     }
     Functions: {
+      delete_own_chat_message: {
+        Args: { _message_id: string }
+        Returns: { message_id: string; conversation_id: string; storage_path: string | null }[]
+      }
       record_first_aid_activity: {
         Args: { p_lesson_id: number | null }
         Returns: {

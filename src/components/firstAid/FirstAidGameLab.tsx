@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Activity, Backpack, Brain, Eye, HeartPulse, RotateCcw, Sparkles, Stethoscope, Trophy } from 'lucide-react';
+import { Activity, Backpack, Brain, Eye, HeartPulse, RotateCcw, Sparkles, Stethoscope, Trophy, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { firstAidTips } from '@/data/firstAidTips';
 import type { FirstAidGameId } from '@/hooks/useFirstAidProgress';
+import { FirstAidRunnerGame } from '@/components/firstAid/FirstAidRunnerGame';
 
-type Game = 'triage' | 'kit' | 'danger' | 'rhythm' | 'patient' | 'detective' | 'cards';
+type Game = 'runner' | 'triage' | 'kit' | 'danger' | 'rhythm' | 'patient' | 'detective' | 'cards';
 const patients = [
   { id: 'red', ar: 'مصاب لا يستجيب ولا يتنفس بشكل طبيعي', en: 'A person is unresponsive and not breathing normally', priority: 0 },
   { id: 'yellow', ar: 'مصاب بنزيف مستمر لكنه واعٍ ويتنفس', en: 'A person has ongoing bleeding but is alert and breathing', priority: 1 },
@@ -27,6 +28,7 @@ const dangerItems = [
   { id: 'glass', ar: 'زجاج مكسور على الأرض', en: 'Broken glass on the ground' },
 ];
 const games: { id: Game; ar: string; en: string; icon: typeof Activity }[] = [
+  { id: 'runner', ar: 'عداء الإنقاذ', en: 'Rescue runner', icon: Zap },
   { id: 'triage', ar: 'فرز المصابين', en: 'Mass casualty', icon: Activity },
   { id: 'kit', ar: 'حقيبة الإسعاف', en: 'Build a kit', icon: Backpack },
   { id: 'danger', ar: 'اكتشف الخطر', en: 'Spot danger', icon: Eye },
@@ -98,6 +100,7 @@ export function FirstAidGameLab({ onComplete }: { onComplete: (gameId: FirstAidG
       {games.map(({ id, ar: labelAr, en, icon: Icon }) => <Button key={id} role="tab" aria-selected={game === id} variant={game === id ? 'default' : 'outline'} size="sm" className={`rescue-game-tab shrink-0 ${game === id ? 'rescue-game-tab-active' : ''}`} onClick={() => resetGame(id)}><Icon className="me-2 h-4 w-4" />{L(labelAr, en)}</Button>)}
     </div>
     <CardContent key={game} data-game={game} className="rescue-stage-enter min-h-72 p-4 md:p-6">
+      {game === 'runner' && <FirstAidRunnerGame onComplete={onComplete} />}
       {game === 'triage' && <div className="space-y-4">
         <h3 className="text-lg font-bold">{L('رتّب الأولوية التعليمية للمصابين', 'Set an educational priority order')}</h3>
         <p className="text-sm text-muted-foreground">{L('اسحب ترتيبك بالضغط على المصابين بالتتابع. في حادث حقيقي اتصل بـ123 واتبع توجيهات الطوارئ؛ هذا تدريب مبسط وليس فرزًا طبيًا معتمدًا.', 'Select the people in priority order. In a real emergency call 123 and follow emergency services; this is simplified practice, not certified triage.')}</p>

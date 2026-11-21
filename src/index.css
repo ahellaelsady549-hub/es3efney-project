@@ -463,15 +463,28 @@ All colors MUST be HSL.
   backdrop-filter: blur(12px);
 }
 .rescue-xp-chip b { border-radius: 9999px; background: rgb(251 191 36 / .18); padding: .25rem .5rem; color: #fde68a; }
+.runner-track { min-height: 9rem; }
+.runner-character { width: fit-content; line-height: 1; }
+.runner-obstacle { transform-origin: center bottom; }
 
 @media (prefers-reduced-motion: no-preference) {
   @keyframes rescue-orbit { 0%, 100% { transform: translate3d(0, 0, 0) scale(.94); } 50% { transform: translate3d(0, -10px, 0) scale(1.06); } }
   @keyframes rescue-enter { from { opacity: 0; transform: translateY(12px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
   @keyframes rescue-win { 0% { transform: scale(.98); box-shadow: 0 0 0 0 rgb(16 185 129 / .32); } 60% { transform: scale(1.01); box-shadow: 0 0 0 10px rgb(16 185 129 / 0); } 100% { transform: scale(1); box-shadow: none; } }
+  @keyframes runner-bob { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-5px) rotate(4deg); } }
+  @keyframes runner-jump { 0% { transform: translateY(0) scale(1); } 45% { transform: translateY(-38px) scale(1.08); } 100% { transform: translateY(0) scale(1); } }
+  @keyframes runner-obstacle-approach-rtl { from { transform: translateX(-76px) scale(.72); opacity: .7; } to { transform: translateX(0) scale(1); opacity: 1; } }
+  @keyframes runner-obstacle-approach-ltr { from { transform: translateX(76px) scale(.72); opacity: .7; } to { transform: translateX(0) scale(1); opacity: 1; } }
+  @keyframes runner-obstacle-dodge { 0%, 100% { transform: translateY(0) rotate(0); } 50% { transform: translateY(-4px) rotate(-10deg); } }
   .rescue-game-orb { animation: rescue-orbit 7s ease-in-out infinite; }
   .rescue-game-orb-two { animation-delay: -3.5s; }
   .rescue-stage-enter { animation: rescue-enter 360ms cubic-bezier(.2, .8, .2, 1) both; }
   .rescue-feedback-good { animation: rescue-win 650ms ease-out both; }
+  .runner-character-running { animation: runner-bob 420ms ease-in-out infinite; }
+  .runner-character-jump { animation: runner-jump 620ms cubic-bezier(.2, .8, .2, 1) both; }
+  [dir='rtl'] .runner-obstacle-moving { animation: runner-obstacle-approach-rtl 7s linear both; }
+  [dir='ltr'] .runner-obstacle-moving { animation: runner-obstacle-approach-ltr 7s linear both; }
+  .runner-track-jump .runner-obstacle { animation: runner-obstacle-dodge 420ms ease-in-out 2; }
   .rescue-game-tab { transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease; }
   .rescue-game-tab-active { box-shadow: 0 8px 24px hsl(var(--primary) / .2); }
   .rescue-game-tab:hover { transform: translateY(-2px); }
@@ -481,4 +494,5 @@ All colors MUST be HSL.
   .rescue-game-orb { animation: none; }
   .rescue-stage-enter, .rescue-feedback-good { animation: none; }
   .rescue-game-tab { transition: none; }
+  .runner-character-running, .runner-character-jump, .runner-obstacle { animation: none !important; }
 }
