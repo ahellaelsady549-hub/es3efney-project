@@ -8,6 +8,7 @@ import { LanguageProvider } from "@/contexts/LanguageContext";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ReminderScheduler } from '@/components/ReminderScheduler';
+import { BottomNav } from '@/components/BottomNav';
 import Index from "./pages/Index";
 const About = lazy(() => import("./pages/About"));
 const Auth = lazy(() => import("./pages/Auth"));
@@ -36,6 +37,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const AskMePage = lazy(() => import("./pages/AskMePage"));
 const FirstAidAcademy = lazy(() => import("./pages/FirstAidAcademy"));
 const HowToUsePage = lazy(() => import("./pages/HowToUsePage"));
+const NotificationsPage = lazy(() => import("./pages/Notifications"));
 
 const queryClient = new QueryClient();
 
@@ -49,13 +51,14 @@ const AnimatedRoutes = () => {
   }, [location.pathname, location.hash]);
 
   return (
-    <div key={location.pathname} className="route-enter">
+    <div key={location.pathname} className="route-enter pb-20 md:pb-0">
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center" role="status"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
       <Routes location={location}>
         <Route path="/" element={<Index />} />
         <Route path="/about" element={<About />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/admin" element={<AdminPage />} />
         <Route path="/doctor-application" element={<DoctorApplication />} />
         <Route path="/find-doctor" element={<FindDoctor />} />
@@ -95,6 +98,7 @@ const App = () => (
               <TermsGate />
               <ReminderScheduler />
               <AnimatedRoutes />
+              <BottomNav />
               <BackToTop />
               <SiteGuideBot />
             </TooltipProvider>

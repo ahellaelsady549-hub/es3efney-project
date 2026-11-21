@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Activity, ArrowRight, BookOpenCheck, Flame, HeartPulse, Medal, ShieldAlert, Sparkles, Backpack, Trophy } from 'lucide-react';
+import { Activity, ArrowRight, BookOpenCheck, Flame, HeartPulse, Medal, ShieldAlert, Sparkles, Backpack, Trophy, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -54,6 +54,9 @@ export function RescueWorldHub({ xp, streak, completed, total, onOpenLesson, onO
         <div><div className="mb-2 flex items-center gap-2 text-amber-300"><Sparkles className="h-4 w-4" /><span className="text-xs font-bold uppercase tracking-widest">ES3EFNY · RESCUE WORLD</span></div>
           <h2 className="text-2xl font-black md:text-3xl">{L('مستعد تنقذ الموقف؟', 'Ready to rescue?')}</h2>
           <p className="mt-2 max-w-xl text-sm leading-6 text-white/75">{L('تعلّم بالاختيار والتجربة. كل مرحلة تقرّبك من استجابة أهدأ وأوعى.', 'Learn by choosing and practicing. Each stage builds calmer, more informed responses.')}</p>
+          <a href="#first-aid-game-lab" className="mt-4 inline-flex min-h-11 items-center gap-2 rounded-lg bg-amber-300 px-4 py-2 text-sm font-black text-slate-950 transition-colors hover:bg-amber-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">
+            <Zap className="h-4 w-4" />{L('ابدأ لعبة عداء الإنقاذ', 'Play Rescue Runner')}
+          </a>
         </div>
         <div className="flex gap-3">
           <div className="rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-center"><Trophy className="mx-auto mb-1 h-5 w-5 text-amber-300" /><strong className="block text-xl">{xp}</strong><span className="text-xs text-white/70">XP</span></div>

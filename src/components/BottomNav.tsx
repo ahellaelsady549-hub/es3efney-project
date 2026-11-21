@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Dumbbell, MessageCircle, Stethoscope, User, LogIn } from 'lucide-react';
+import { Home, Dumbbell, MessageCircle, Stethoscope, User, LogIn, Bell } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
@@ -9,6 +9,7 @@ const tabs = [
   { to: '/gym', labelKey: 'nav.gym', icon: Dumbbell },
   { to: '/personal-diagnosis', labelKey: 'nav.diagnose', icon: Stethoscope },
   { to: '/community', labelKey: 'nav.community', icon: MessageCircle },
+  { to: '/notifications', labelKey: 'nav.notifications', icon: Bell },
   { to: '/dashboard', labelKey: 'nav.dashboard', icon: User },
 ];
 

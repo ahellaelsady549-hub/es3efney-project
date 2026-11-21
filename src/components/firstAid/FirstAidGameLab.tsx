@@ -41,7 +41,7 @@ const games: { id: Game; ar: string; en: string; icon: typeof Activity }[] = [
 export function FirstAidGameLab({ onComplete }: { onComplete: (gameId: FirstAidGameId) => Promise<unknown> }) {
   const { L, language } = useLanguage();
   const ar = language === 'ar';
-  const [game, setGame] = useState<Game>('triage');
+  const [game, setGame] = useState<Game>('runner');
   const [triage, setTriage] = useState<string[]>([]);
   const [kit, setKit] = useState<string[]>([]);
   const [danger, setDanger] = useState<string[]>([]);
@@ -83,7 +83,7 @@ export function FirstAidGameLab({ onComplete }: { onComplete: (gameId: FirstAidG
   const dangerScore = danger.length;
   const finishRhythm = () => { setRhythmRunning(false); setSeconds(0); };
 
-  return <Card id="first-aid-game-lab" className="rescue-game-shell mb-7 overflow-hidden border-primary/20 shadow-xl">
+  return <Card id="first-aid-game-lab" className="rescue-game-shell mb-7 scroll-mt-24 overflow-hidden border-primary/20 shadow-xl">
     <div className="rescue-game-hero relative overflow-hidden bg-gradient-to-br from-slate-950 via-indigo-950 to-primary p-5 text-white md:p-7">
       <div className="rescue-game-orb rescue-game-orb-one" aria-hidden="true" />
       <div className="rescue-game-orb rescue-game-orb-two" aria-hidden="true" />
