@@ -96,12 +96,16 @@ const shuffleChoices = (choices: Choice[]) => [...choices].sort(() => Math.rando
 
 const ObstacleModel = ({ kind }: { kind: ObstacleKind }) => {
   if (kind === 'barrier') return (
-    <svg viewBox="0 0 120 88" className="runner-obstacle-model" role="img" aria-label="Road barrier">
-      <ellipse cx="60" cy="79" rx="48" ry="7" fill="#0f172a" opacity=".35" />
-      <path d="M25 55h10v22H25zM85 55h10v22H85z" fill="#334155" />
-      <path d="M15 30 25 20h78v30l-9 9H15z" fill="#dc2626" stroke="#7f1d1d" strokeWidth="3" />
-      <path d="M25 20v30M49 20v30M73 20v30M97 20v30" stroke="#f8fafc" strokeWidth="9" />
-      <path d="m103 20 9 8v29l-9-7z" fill="#991b1b" />
+    <svg viewBox="0 0 140 104" className="runner-obstacle-model" role="img" aria-label="Road barrier">
+      <ellipse cx="70" cy="94" rx="59" ry="8" fill="#0f172a" opacity=".42" />
+      <path d="M28 61h12v25H28zM100 61h12v25h-12z" fill="#334155" stroke="#0f172a" strokeWidth="3" />
+      <path d="M18 82h31v8H15zM91 82h31v8H91z" fill="#475569" />
+      <path d="m17 32 11-10h87v36l-10 10H17z" fill="#c2410c" stroke="#7c2d12" strokeWidth="4" />
+      <path d="m28 22 87 0v36H28z" fill="#f97316" />
+      <path d="m34 56 21-34h17L51 56zM70 58l21-36h17L87 58z" fill="#fef3c7" />
+      <path d="m115 22 12 10v35l-12-9z" fill="#9a3412" stroke="#7c2d12" strokeWidth="3" />
+      <path d="M24 32h7M49 32h7M74 32h7M99 32h7" stroke="#fef08a" strokeWidth="5" strokeLinecap="round" />
+      <circle cx="31" cy="58" r="3" fill="#7c2d12" /><circle cx="109" cy="58" r="3" fill="#7c2d12" />
     </svg>
   );
   if (kind === 'flame') return (
@@ -140,19 +144,52 @@ const ObstacleModel = ({ kind }: { kind: ObstacleKind }) => {
   );
 };
 
+const HospitalBuilding = ({ side }: { side: 'left' | 'right' }) => (
+  <svg viewBox="0 0 180 150" className={`runner-hospital runner-hospital-${side}`} aria-hidden="true">
+    <ellipse cx="90" cy="142" rx="80" ry="6" fill="#0f172a" opacity=".23" />
+    <path d="M22 45 48 28h111v99H22z" fill="#f8fafc" stroke="#94a3b8" strokeWidth="3" />
+    <path d="m22 45 26-17v99l-26-6z" fill="#cbd5e1" />
+    <path d="M48 28h111v18H48z" fill="#0ea5e9" />
+    <path d="M63 19h77v9H63z" fill="#0369a1" />
+    <rect x="80" y="55" width="49" height="25" rx="4" fill="#fff" stroke="#bae6fd" strokeWidth="2" />
+    <path d="M99 59h10v7h7v9h-7v7H99v-7h-7v-9h7z" fill="#ef4444" />
+    <path d="M57 57h14v18H57zM137 57h13v18h-13zM57 88h14v18H57zM137 88h13v18h-13z" fill="#bae6fd" stroke="#7dd3fc" strokeWidth="2" />
+    <path d="M86 98h26v29H86z" fill="#0f766e" />
+    <path d="M89 101h20v7H89z" fill="#ccfbf1" />
+    <path d="M43 119h117" stroke="#e2e8f0" strokeWidth="5" />
+    <text x="103" y="96" textAnchor="middle" fontSize="7" fontWeight="800" fill="#0f172a">HOSPITAL</text>
+  </svg>
+);
+
 const RunnerAvatar = ({ lane, className = '' }: { lane: number; className?: string }) => (
   <svg viewBox="0 0 100 150" className={`runner-avatar ${className}`} style={{ left: `${50 + lane * 18}%` }} aria-hidden="true">
     <ellipse cx="50" cy="143" rx="26" ry="5" fill="#0f172a" opacity=".38" />
-    <path className="runner-leg runner-leg-left" d="M39 99 36 122 27 137q-1 5 5 5h18l5-8-7-13 8-18z" fill="#1e293b" stroke="#0f172a" strokeWidth="3" />
-    <path className="runner-leg runner-leg-right" d="m59 99 6 21 12 13q4 5-2 8H57l-8-8 5-13-8-20z" fill="#334155" stroke="#0f172a" strokeWidth="3" />
-    <path d="M30 136h18l6 5q1 4-3 5H26q-4-2 0-7zM58 135h18l9 5q2 4-3 5H59q-5-2-1-7z" fill="#f8fafc" stroke="#334155" strokeWidth="3" />
+    <g className="runner-leg runner-leg-left">
+      <path d="M39 99 36 122 27 137q-1 5 5 5h18l5-8-7-13 8-18z" fill="#1e293b" stroke="#0f172a" strokeWidth="3" />
+      <path d="M30 136h18l6 5q1 4-3 5H26q-4-2 0-7z" fill="#f8fafc" stroke="#334155" strokeWidth="3" />
+      <path d="M28 143h23" stroke="#0ea5e9" strokeWidth="3" />
+    </g>
+    <g className="runner-leg runner-leg-right">
+      <path d="m59 99 6 21 12 13q4 5-2 8H57l-8-8 5-13-8-20z" fill="#334155" stroke="#0f172a" strokeWidth="3" />
+      <path d="M58 135h18l9 5q2 4-3 5H59q-5-2-1-7z" fill="#f8fafc" stroke="#334155" strokeWidth="3" />
+      <path d="M59 142h25" stroke="#0ea5e9" strokeWidth="3" />
+    </g>
     <path d="M35 56q15-10 31 0l8 40q-22 14-48 0z" fill="#0ea5e9" stroke="#075985" strokeWidth="4" />
-    <path d="m39 61-13 15-6 17q-1 6 5 7 5 1 7-5l10-17M63 61l13 14 7 17q1 6-5 8-5 1-7-5L60 78" fill="#f0b18f" stroke="#9a5f47" strokeWidth="4" strokeLinecap="round" />
+    <path d="m42 63 8 8 8-8M50 71v24" fill="none" stroke="#e0f2fe" strokeWidth="4" strokeLinejoin="round" />
+    <path d="M43 80h14" stroke="#facc15" strokeWidth="5" />
+    <g className="runner-arm runner-arm-left"><path d="m39 61-13 15-6 17q-1 6 5 7 5 1 7-5l10-17" fill="#f0b18f" stroke="#9a5f47" strokeWidth="4" strokeLinecap="round" /></g>
+    <g className="runner-arm runner-arm-right"><path d="m63 61 13 14 7 17q1 6-5 8-5 1-7-5L60 78" fill="#f0b18f" stroke="#9a5f47" strokeWidth="4" strokeLinecap="round" /></g>
     <path d="M47 54v39M53 55v39" stroke="#bae6fd" strokeWidth="3" opacity=".75" />
     <path d="M35 62q15 13 31 0" fill="none" stroke="#7dd3fc" strokeWidth="3" opacity=".8" />
-    <path d="M37 37q2-19 17-21 17 1 18 21l-5 16q-11 10-24 0z" fill="#a56647" stroke="#713f2c" strokeWidth="4" />
-    <path d="M35 37q0-24 19-25 19 1 20 25-8-8-18-8-10 8-21 8z" fill="#1e293b" stroke="#0f172a" strokeWidth="4" />
-    <path d="M45 27q11-10 23 0" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
+    <g className="runner-head">
+      <path d="M37 37q2-19 17-21 17 1 18 21l-5 16q-11 10-24 0z" fill="#a56647" stroke="#713f2c" strokeWidth="4" />
+      <path d="M35 37q0-24 19-25 19 1 20 25-8-8-18-8-10 8-21 8z" fill="#1e293b" stroke="#0f172a" strokeWidth="4" />
+      <path d="M45 27q11-10 23 0" stroke="#38bdf8" strokeWidth="3" strokeLinecap="round" />
+      <path d="M61 37q4-3 8 0M62 40q3 2 5 0M68 43l4 2-4 2M62 48q4 3 7 0" fill="none" stroke="#351f1c" strokeWidth="1.8" strokeLinecap="round" />
+      <circle cx="68" cy="39" r="1.1" fill="#0f172a" />
+      <path d="M55 35q5-4 10-1" fill="none" stroke="#713f2c" strokeWidth="2" strokeLinecap="round" />
+      <path d="M41 39q1 5 5 4" fill="none" stroke="#d99a72" strokeWidth="3" strokeLinecap="round" />
+    </g>
     <path d="M39 98q11 6 23 0" stroke="#f8fafc" strokeWidth="3" opacity=".75" />
   </svg>
 );
@@ -301,43 +338,10 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
         <div className="rounded-xl border bg-background/80 p-2"><span className="block text-xs text-muted-foreground">{ar('الحياة', 'Lives')}</span><span className="flex justify-center gap-1" aria-label={ar(`${lives} حيوات`, `${lives} lives`)}>{[0, 1, 2].map((heart) => <Heart key={heart} className={`h-5 w-5 ${heart < lives ? 'fill-rose-500 text-rose-500' : 'text-muted-foreground/40'}`} />)}</span></div>
       </div>
 
-      {phase !== 'ready' && phase !== 'won' && phase !== 'lost' && (
-        <div className="space-y-4" aria-live="polite">
-          <div className="flex items-center gap-3 rounded-xl border p-3">
-            <Timer className={`h-5 w-5 ${seconds <= 2 ? 'text-destructive' : 'text-primary'}`} />
-            <div className="min-w-0 flex-1"><p className="font-bold">{ar(question.promptAr, question.promptEn)}</p><Progress value={(seconds / 7) * 100} className="mt-2 h-2" aria-label={ar('الوقت المتبقي للسؤال', 'Question time remaining')} /></div>
-            <b className={`min-w-8 text-center text-2xl tabular-nums ${seconds <= 2 ? 'text-destructive' : ''}`}>{seconds}</b>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-3">
-            {choices.map((choice, index) => (
-              <Button key={`${round}-${index}`} type="button" variant="outline" disabled={phase !== 'running'} className="h-auto min-h-16 justify-start whitespace-normal p-3 text-start" onClick={() => answer(choice)}>
-                <span className="me-2 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 font-black text-primary">{String.fromCharCode(65 + index)}</span>
-                <span>{ar(choice.ar, choice.en)}</span>
-              </Button>
-            ))}
-          </div>
-
-          {phase === 'feedback' && result && (
-            <div className={`rounded-xl border p-4 ${result === 'correct' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
-              <p className="font-bold">{result === 'correct' ? ar('قفزة ناجحة! +١٠ نقاط +١ كوين', 'Great jump! +10 points +1 coin') : result === 'timeout' ? ar('انتهى الوقت واصطدمت بالعقبة وخسرت حياة', 'Time ran out; you hit the obstacle and lost a life') : ar('اصطدمت بالعقبة وخسرت حياة', 'You hit the obstacle and lost a life')}</p>
-              <p className="mt-1 text-sm leading-6">{ar(question.explanationAr, question.explanationEn)}</p>
-              {result !== 'correct' && (
-                <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">
-                  {ar('الإجابة الصحيحة: ', 'Correct answer: ')}
-                  {ar(question.choices.find((choice) => choice.correct)?.ar ?? '', question.choices.find((choice) => choice.correct)?.en ?? '')}
-                </p>
-              )}
-              <a className="mt-2 inline-block text-xs font-semibold text-primary underline" href={SOURCES[question.source]} target="_blank" rel="noreferrer">{ar(`المصدر: ${question.source}`, `Source: ${question.source}`)}</a>
-              <div><Button className="mt-3" size="sm" onClick={continueRun}>{ar(lives <= 0 ? 'عرض النتيجة' : round + 1 === QUESTIONS.length ? 'إنهاء المسار' : 'تابع الجري', lives <= 0 ? 'See result' : round + 1 === QUESTIONS.length ? 'Finish course' : 'Keep running')}</Button></div>
-            </div>
-          )}
-        </div>
-      )}
-
       <div className={`runner-world relative overflow-hidden rounded-2xl border border-sky-300/40 bg-gradient-to-b from-sky-400/35 via-sky-200/15 to-amber-500/15 ${phase === 'running' ? 'runner-world-running' : ''} ${isJumping ? 'runner-track-jump' : ''} ${phase === 'feedback' && result !== 'correct' ? 'runner-world-crash' : ''}`}>
         <div className="runner-sun absolute end-[16%] top-4 h-12 w-12 rounded-full bg-amber-200/70 blur-[1px]" aria-hidden="true" />
         <div className="runner-mountains absolute inset-x-0 top-10 h-20" aria-hidden="true" />
+        <div className="runner-city-sides absolute inset-0" aria-hidden="true"><HospitalBuilding side="left" /><HospitalBuilding side="right" /></div>
         <div className="runner-road absolute inset-x-0 bottom-[-38%] h-[92%]" aria-hidden="true">
           <div className="runner-road-edge" />
           <div className="runner-road-lane runner-road-lane-left" />
@@ -345,6 +349,24 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
           <div className="runner-road-dashes" />
         </div>
         <div className="runner-world-label absolute start-3 top-3 rounded-full border border-white/30 bg-slate-950/45 px-3 py-1 text-[11px] font-bold text-white backdrop-blur-sm">{ar('عالم الإنقاذ · المرحلة ', 'Rescue world · Stage ')}{round + 1}</div>
+        {phase === 'running' && (
+          <div className="runner-question-board" aria-live="polite">
+            <div className="mb-2 flex items-center gap-2">
+              <Timer className={`h-4 w-4 shrink-0 ${seconds <= 2 ? 'text-rose-600' : 'text-sky-700'}`} />
+              <p className="min-w-0 flex-1 text-sm font-black leading-5 text-slate-900">{ar(question.promptAr, question.promptEn)}</p>
+              <b className={`min-w-8 text-center text-xl tabular-nums ${seconds <= 2 ? 'text-rose-600' : 'text-slate-800'}`}>{seconds}</b>
+            </div>
+            <Progress value={(seconds / 7) * 100} className="mb-2 h-1.5" aria-label={ar('الوقت المتبقي للسؤال', 'Question time remaining')} />
+            <div className="grid grid-cols-3 gap-1.5">
+              {choices.map((choice, index) => (
+                <Button key={`${round}-${index}`} type="button" variant="outline" disabled={phase !== 'running'} onClick={() => answer(choice)} className="runner-answer-choice h-auto min-h-14 justify-start whitespace-normal p-2 text-start">
+                  <span className="me-1.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[10px] font-black text-primary">{String.fromCharCode(65 + index)}</span>
+                  <span>{ar(choice.ar, choice.en)}</span>
+                </Button>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="runner-character"><RunnerAvatar lane={lane} className={`${phase === 'running' ? 'runner-avatar-running' : ''} ${isJumping ? 'runner-avatar-jump' : ''}`} /></div>
         {phase === 'running' && (
           <div className="runner-coin-stream absolute inset-0 z-10 pointer-events-none" aria-hidden="true">
@@ -360,6 +382,16 @@ export function FirstAidRunnerGame({ onComplete }: { onComplete: (gameId: FirstA
       <div className="grid grid-cols-3 gap-2" aria-label={ar('تحريك المسعف بين المسارات', 'Move the runner between lanes')}>
         {[-1, 0, 1].map((targetLane) => <Button key={targetLane} type="button" variant={lane === targetLane ? 'default' : 'outline'} size="sm" disabled={phase !== 'running'} onClick={() => moveToLane(targetLane)} className="h-10">{targetLane === -1 ? ar('مسار يسار', 'Left lane') : targetLane === 0 ? ar('الوسط', 'Center') : ar('مسار يمين', 'Right lane')}</Button>)}
       </div>
+
+      {phase === 'feedback' && result && (
+        <div className={`rounded-xl border p-4 ${result === 'correct' ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'}`} role="status">
+          <p className="font-bold">{result === 'correct' ? ar('قفزة ناجحة! +١٠ نقاط +١ كوين', 'Great jump! +10 points +1 coin') : result === 'timeout' ? ar('انتهى الوقت واصطدمت بالعقبة وخسرت حياة', 'Time ran out; you hit the obstacle and lost a life') : ar('اصطدمت بالعقبة وخسرت حياة', 'You hit the obstacle and lost a life')}</p>
+          <p className="mt-1 text-sm leading-6">{ar(question.explanationAr, question.explanationEn)}</p>
+          {result !== 'correct' && <p className="mt-2 text-sm font-semibold text-emerald-700 dark:text-emerald-400">{ar('الإجابة الصحيحة: ', 'Correct answer: ')}{ar(question.choices.find((choice) => choice.correct)?.ar ?? '', question.choices.find((choice) => choice.correct)?.en ?? '')}</p>}
+          <a className="mt-2 inline-block text-xs font-semibold text-primary underline" href={SOURCES[question.source]} target="_blank" rel="noreferrer">{ar(`المصدر: ${question.source}`, `Source: ${question.source}`)}</a>
+          <div><Button className="mt-3" size="sm" onClick={continueRun}>{ar(lives <= 0 ? 'عرض النتيجة' : round + 1 === QUESTIONS.length ? 'إنهاء المسار' : 'تابع الجري', lives <= 0 ? 'See result' : round + 1 === QUESTIONS.length ? 'Finish course' : 'Keep running')}</Button></div>
+        </div>
+      )}
 
       {phase === 'ready' ? (
         <div className="rounded-2xl border bg-primary/5 p-5 text-center">
