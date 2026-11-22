@@ -1,11 +1,12 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Dumbbell, MessageCircle, Stethoscope, User, LogIn, Bell } from 'lucide-react';
+import { Home, Dumbbell, MessageCircle, Stethoscope, User, LogIn, Bell, GraduationCap } from 'lucide-react';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 
 const tabs = [
   { to: '/', labelKey: 'nav.home', icon: Home },
+  { to: '/learn', labelKey: 'nav.learn', icon: GraduationCap },
   { to: '/gym', labelKey: 'nav.gym', icon: Dumbbell },
   { to: '/personal-diagnosis', labelKey: 'nav.diagnose', icon: Stethoscope },
   { to: '/community', labelKey: 'nav.community', icon: MessageCircle },
@@ -22,7 +23,7 @@ export const BottomNav = () => {
     ? tabs
     : [
         tabs[0],
-        tabs[1],
+        tabs[2],
         { to: '/auth', labelKey: 'nav.login', icon: LogIn },
       ];
 

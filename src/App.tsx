@@ -38,6 +38,7 @@ const AskMePage = lazy(() => import("./pages/AskMePage"));
 const FirstAidAcademy = lazy(() => import("./pages/FirstAidAcademy"));
 const HowToUsePage = lazy(() => import("./pages/HowToUsePage"));
 const NotificationsPage = lazy(() => import("./pages/Notifications"));
+const LearnPage = lazy(() => import("./pages/LearnPage"));
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,7 @@ const AnimatedRoutes = () => {
       <Suspense fallback={<div className="flex min-h-screen items-center justify-center" role="status"><div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" /></div>}>
       <Routes location={location}>
         <Route path="/" element={<Index />} />
+        <Route path="/learn" element={<LearnPage />} />
         <Route path="/about" element={<About />} />
         <Route path="/auth" element={<Auth />} />
         <Route path="/dashboard" element={<Dashboard />} />

@@ -18,6 +18,7 @@ const ar: Record<string, string> = {
 
   // Navigation
   'nav.home': 'الرئيسية',
+  'nav.learn': 'التعلّم',
   'nav.firstAid': 'الإسعافات الأولية',
   'nav.firstAidAcademy': 'أكاديمية الإسعافات',
   'nav.treatments': 'العلاجات',
@@ -167,6 +168,7 @@ const en: Record<string, string> = {
   'brand.name': 'Es3efny',
 
   'nav.home': 'Home',
+  'nav.learn': 'Learn',
   'nav.firstAid': 'First Aid',
   'nav.firstAidAcademy': 'First-aid Academy',
   'nav.treatments': 'Treatments',

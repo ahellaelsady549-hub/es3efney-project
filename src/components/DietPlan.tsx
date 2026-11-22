@@ -124,7 +124,7 @@ export const DietPlan = () => {
       else if (bmi >= 25) goal = 'lose';
       if (userData.goal !== 'auto') goal = userData.goal;
 
-      await supabase.from('user_diet_plans').insert({
+      const { error } = await supabase.from('user_diet_plans').insert({
         user_id: user.id,
         weight,
         height,
@@ -142,12 +142,19 @@ export const DietPlan = () => {
         diet_plan: plan as any
       });
 
+      if (error) throw error;
+
       toast({
         title: L("تم الحفظ", "Saved"),
         description: L("تم حفظ النظام الغذائي في لوحة التحكم", "Diet plan saved to your dashboard")
       });
     } catch (error) {
       console.error('Error saving diet plan:', error);
+      toast({
+        title: L('تعذر الحفظ', 'Save failed'),
+        description: L('تم إنشاء الخطة، لكن تعذر حفظها في لوحة التحكم. حاول مرة أخرى.', 'The plan was created, but could not be saved to your dashboard. Please try again.'),
+        variant: 'destructive',
+      });
     }
   };
 
@@ -156,10 +163,11 @@ export const DietPlan = () => {
     const weight = parseFloat(userData.weight);
     const age = parseFloat(userData.age);
 
-    if (!height || !weight || !age) {
+    if (!Number.isFinite(height) || !Number.isFinite(weight) || !Number.isFinite(age) ||
+        height <= 80 || height >= 260 || weight <= 20 || weight >= 400 || age <= 5 || age >= 120) {
       toast({
         title: L("خطأ", "Error"),
-        description: L("يرجى إدخال جميع البيانات المطلوبة", "Please enter all required information"),
+        description: L('أدخل طولاً بين 81 و259 سم، ووزناً بين 21 و399 كجم، وعمراً بين 6 و119 سنة.', 'Enter height 81–259 cm, weight 21–399 kg, and age 6–119.'),
         variant: "destructive",
       });
       return;
@@ -208,7 +216,7 @@ export const DietPlan = () => {
         localStorage.setItem('dietUserData', JSON.stringify(userData));
         // Auto-save for logged-in users
         if (user) {
-          saveDietPlanToDatabase(data.dietPlan);
+          await saveDietPlanToDatabase(data.dietPlan);
         }
       }
     } catch (error) {

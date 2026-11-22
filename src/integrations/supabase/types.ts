@@ -14,6 +14,12 @@ export type Database = {
   }
   public: {
     Tables: {
+      student_learning_items: {
+        Row: { id: string; user_id: string; item_type: string; title: string; content: Json; created_at: string; updated_at: string }
+        Insert: { id?: string; user_id: string; item_type: string; title: string; content?: Json; created_at?: string; updated_at?: string }
+        Update: { id?: string; user_id?: string; item_type?: string; title?: string; content?: Json; created_at?: string; updated_at?: string }
+        Relationships: []
+      }
       first_aid_learning_stats: {
         Row: {
           current_streak: number
