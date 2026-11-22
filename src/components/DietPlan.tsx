@@ -202,7 +202,15 @@ export const DietPlan = () => {
       });
 
       if (error) {
-        throw new Error(error.message);
+        let message = error.message;
+        const context = (error as { context?: unknown }).context;
+        if (context instanceof Response) {
+          try {
+            const payload = await context.clone().json();
+            if (typeof payload?.error === 'string') message = payload.error;
+          } catch { /* Keep the SDK message when the response is not JSON. */ }
+        }
+        throw new Error(message);
       }
 
       if (data?.error) {
